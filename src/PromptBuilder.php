@@ -160,6 +160,10 @@ SCHEMA;
         $selectorJson = json_encode($selector, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $signalsJson = json_encode(array_values($optimizedSignals), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
+        // Capture environment fingerprint
+        $envFingerprint = EnvFingerprint::capture();
+        $envFingerprintJson = json_encode($envFingerprint, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
         // Build the prompt
         return trim(<<<PROMPT
         GEP -- EVOLUTION PROTOCOL{$cycleLabel} [{$nowIso}]
@@ -171,6 +175,9 @@ SCHEMA;
         ━━━━━━━━━━━━━━━━━━━━━━
 
         Signals detected: {$signalsJson}
+
+        Context [Env Fingerprint]:
+        {$envFingerprintJson}
 
         Selector decision:
         {$selectorJson}

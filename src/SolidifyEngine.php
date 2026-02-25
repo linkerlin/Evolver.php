@@ -116,6 +116,9 @@ final class SolidifyEngine
         $geneId = $gene['id'] ?? null;
         $capsuleId = "capsule_{$timestamp}_{$randomSuffix}";
 
+        // Capture environment fingerprint for the event record
+        $envFingerprint = EnvFingerprint::capture();
+
         // Build evolution event
         $evolutionEvent = array_merge($event ?? [], [
             'type' => 'EvolutionEvent',
@@ -132,6 +135,7 @@ final class SolidifyEngine
                 'status' => empty($warnings) ? 'success' : 'partial',
                 'score' => empty($warnings) ? 0.8 : 0.5,
             ],
+            'env_fingerprint' => $envFingerprint,
             'created_at' => $nowIso,
             'summary' => $summary,
         ]);

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Evolver\Tests;
 
 use Evolver\Database;
+use Evolver\EnvFingerprint;
 use Evolver\GepAssetStore;
 use Evolver\GeneSelector;
 use Evolver\SignalExtractor;
@@ -540,6 +541,154 @@ class EvolverTest extends TestCase
         $this->assertNotEmpty($failed);
         $this->assertSame('gene_test', $failed[0]['gene']);
         $this->assertSame('Test failure', $failed[0]['failure_reason']);
+    }
+
+    // -------------------------------------------------------------------------
+    // EnvFingerprint tests
+    // -------------------------------------------------------------------------
+
+    public function testCaptureFingerprintStructure(): void
+    {
+        $fp = EnvFingerprint::capture();
+
+        // Required keys must all be present
+        $this->assertArrayHasKey('device_id', $fp);
+        $this->assertArrayHasKey('php_version', $fp);
+        $this->assertArrayHasKey('platform', $fp);
+        $this->assertArrayHasKey('arch', $fp);
+        $this->assertArrayHasKey('os_release', $fp);
+        $this->assertArrayHasKey('hostname', $fp);
+        $this->assertArrayHasKey('evolver_version', $fp);
+        $this->assertArrayHasKey('client', $fp);
+        $this->assertArrayHasKey('client_version', $fp);
+        $this->assertArrayHasKey('region', $fp);
+        $this->assertArrayHasKey('cwd', $fp);
+        $this->assertArrayHasKey('container', $fp);
+    }
+
+    public function testCaptureFingerprintValues(): void
+    {
+        $fp = EnvFingerprint::capture();
+
+        // php_version must start with "PHP/"
+        $this->assertStringStartsWith('PHP/', $fp['php_version']);
+
+        // platform must be one of the expected values
+        $this->assertContains($fp['platform'], ['linux', 'darwin', 'win32', 'freebsd', 'openbsd']);
+
+        // hostname must be a 12-char hex string (SHA-256 prefix)
+        $this->assertMatchesRegularExpression('/^[a-f0-9]{12}$/', $fp['hostname']);
+
+        // device_id must be a hex string of 16–64 chars
+        $this->assertMatchesRegularExpression('/^[a-f0-9]{16,64}$/', $fp['device_id']);
+
+        // cwd must be a non-empty string
+        $this->assertIsString($fp['cwd']);
+        $this->assertNotEmpty($fp['cwd']);
+
+        // container must be a bool
+        $this->assertIsBool($fp['container']);
+
+        // client must default to the composer name or 'evolver-php'
+        $this->assertIsString($fp['client']);
+        $this->assertNotEmpty($fp['client']);
+    }
+
+    public function testFingerprintKeyIsDeterministic(): void
+    {
+        $fp = EnvFingerprint::capture();
+
+        // Same fingerprint → same key
+        $key1 = EnvFingerprint::key($fp);
+        $key2 = EnvFingerprint::key($fp);
+        $this->assertSame($key1, $key2);
+
+        // Key must be 16 hex chars
+        $this->assertMatchesRegularExpression('/^[a-f0-9]{16}$/', $key1);
+    }
+
+    public function testFingerprintKeyChangesWhenFingerprintChanges(): void
+    {
+        $fp = EnvFingerprint::capture();
+        $key1 = EnvFingerprint::key($fp);
+
+        // Change one field → different key
+        $modified = $fp;
+        $modified['device_id'] = 'deadbeefdeadbeefdeadbeefdeadbeef';
+        $key2 = EnvFingerprint::key($modified);
+
+        $this->assertNotSame($key1, $key2);
+    }
+
+    public function testIsSameEnvClassTrue(): void
+    {
+        $fp = EnvFingerprint::capture();
+        $this->assertTrue(EnvFingerprint::isSameEnvClass($fp, $fp));
+    }
+
+    public function testIsSameEnvClassFalse(): void
+    {
+        $fpA = EnvFingerprint::capture();
+        $fpB = $fpA;
+        $fpB['device_id'] = 'cafebabecafebabecafebabecafebabe';
+        $this->assertFalse(EnvFingerprint::isSameEnvClass($fpA, $fpB));
+    }
+
+    public function testFingerprintKeyOnEmptyArray(): void
+    {
+        $key = EnvFingerprint::key([]);
+        $this->assertSame('unknown', $key);
+    }
+
+    public function testGetDeviceIdIsCached(): void
+    {
+        // Two calls must return the same device ID (caching)
+        $id1 = EnvFingerprint::getDeviceId();
+        $id2 = EnvFingerprint::getDeviceId();
+        $this->assertSame($id1, $id2);
+        $this->assertMatchesRegularExpression('/^[a-f0-9]{16,64}$/', $id1);
+    }
+
+    public function testIsContainerReturnsBool(): void
+    {
+        $result = EnvFingerprint::isContainer();
+        $this->assertIsBool($result);
+    }
+
+    public function testPromptContainsEnvFingerprint(): void
+    {
+        $genes = $this->store->loadGenes();
+        $prompt = $this->promptBuilder->buildGepPrompt([
+            'context' => 'test context',
+            'signals' => ['log_error'],
+            'selector' => [],
+            'selectedGene' => $genes[0] ?? null,
+        ]);
+
+        $this->assertStringContainsString('Env Fingerprint', $prompt);
+        $this->assertStringContainsString('php_version', $prompt);
+        $this->assertStringContainsString('device_id', $prompt);
+        $this->assertStringContainsString('platform', $prompt);
+    }
+
+    public function testSolidifyEventContainsEnvFingerprint(): void
+    {
+        $genes = $this->store->loadGenes();
+        $result = $this->solidifyEngine->solidify([
+            'intent' => 'repair',
+            'summary' => 'Test with fingerprint',
+            'signals' => ['log_error'],
+            'gene' => $genes[0],
+            'blastRadius' => ['files' => 1, 'lines' => 3],
+            'dryRun' => false,
+        ]);
+
+        $this->assertTrue($result['ok']);
+        $event = $result['event'];
+        $this->assertArrayHasKey('env_fingerprint', $event);
+        $this->assertArrayHasKey('php_version', $event['env_fingerprint']);
+        $this->assertArrayHasKey('device_id', $event['env_fingerprint']);
+        $this->assertStringStartsWith('PHP/', $event['env_fingerprint']['php_version']);
     }
 
     // -------------------------------------------------------------------------

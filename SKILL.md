@@ -12,21 +12,38 @@ Evolver.php 是一个自进化引擎，赋予 AI Agent 自我诊断、自我修�
    - PHP 语法错误、运行时异常
    - 未定义变量、类型错误
    - 数据库连接失败、API 超时
+   - **操作**: 提取错误日志 → 调用 evolver_extract_signals → 调用 evolver_run
 
 2. **性能优化**
    - 响应时间超过阈值
    - 内存使用过高
    - 数据库查询缓慢
+   - **操作**: 收集性能数据 → 调用 evolver_extract_signals → 调用 evolver_run (strategy: harden)
 
 3. **功能扩展**
    - 用户请求新功能
    - 需要添加新的 API 端点
    - 需要集成第三方服务
+   - **操作**: 收集需求描述 → 调用 evolver_run (strategy: innovate)
 
 4. **安全加固**
    - 检测到安全漏洞
    - 需要输入验证
    - 需要添加权限检查
+   - **操作**: 收集安全信息 → 调用 evolver_extract_signals → 调用 evolver_run (strategy: harden)
+
+### 调用前必须做的事
+
+**在调用任何 MCP 工具前，必须先收集以下信息**：
+
+1. **错误日志** - 完整的错误信息、堆栈跟踪
+2. **上下文** - 发生错误的代码位置、相关文件
+3. **用户意图** - 是修复错误、优化性能还是添加功能
+
+**禁止行为**:
+- ❌ 不提供任何参数就调用 evolver_extract_signals
+- ❌ 不提供上下文就调用 evolver_run
+- ❌ 不确认用户意图就执行修改
 
 ## MCP Tools 调用指南
 

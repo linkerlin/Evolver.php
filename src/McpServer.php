@@ -668,6 +668,7 @@ final class McpServer
             'gep://schema'   => $this->resourceSchema(),
             'gep://stats'    => $this->resourceStats(),
             'gep://safety'   => $this->resourceSafety(),
+            'gep://health'   => $this->resourceHealth(),
             default          => throw new \InvalidArgumentException("Unknown resource URI: {$uri}"),
         };
 
@@ -724,6 +725,12 @@ final class McpServer
                 'uri'         => 'gep://safety',
                 'name'        => 'Safety Status',
                 'description' => '🛡️ Current safety configuration including self-modification mode and source protection.',
+                'mimeType'    => 'application/json',
+            ],
+            [
+                'uri'         => 'gep://health',
+                'name'        => 'Database Health',
+                'description' => '💓 Database health status including integrity check, schema version, and migration history.',
                 'mimeType'    => 'application/json',
             ],
         ];
@@ -898,6 +905,16 @@ final class McpServer
             'type' => 'GEP_SafetyStatus',
             'safety_controller' => $this->safetyController->getStatusReport(),
             'source_protector' => $this->sourceProtector->getProtectionReport(),
+        ];
+    }
+
+    private function resourceHealth(): array
+    {
+        $db = $this->db;
+        return [
+            'type' => 'GEP_DatabaseHealth',
+            'health' => $db->getHealthStatus(),
+            'timestamp' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
         ];
     }
 

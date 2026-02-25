@@ -103,12 +103,27 @@ if ($validate) {
         $store = new \Evolver\GepAssetStore($db);
         $genes = $store->loadGenes();
         $stats = $store->getStats();
+        
+        // Get database health status
+        $health = $db->getHealthStatus();
 
         echo "✅ Evolver.php installation valid\n";
         echo "   PHP version: " . PHP_VERSION . "\n";
         echo "   Database: {$dbPath}\n";
+        echo "   Database size: " . number_format($health['size_bytes'] / 1024, 2) . " KB\n";
+        echo "   Schema version: {$health['schema_version']}\n";
+        echo "   Integrity check: {$health['integrity_check']}\n";
         echo "   Genes loaded: " . count($genes) . "\n";
         echo "   Stats: " . json_encode($stats) . "\n";
+        
+        // Show migrations if any
+        if (!empty($health['migrations'])) {
+            echo "   Migrations:\n";
+            foreach ($health['migrations'] as $log) {
+                echo "      - {$log}\n";
+            }
+        }
+        
         exit(0);
     } catch (\Throwable $e) {
         echo "❌ Validation failed: " . $e->getMessage() . "\n";

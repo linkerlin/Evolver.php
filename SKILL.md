@@ -34,20 +34,32 @@ Evolver.php 是一个自进化引擎，赋予 AI Agent 自我诊断、自我修�
 
 **何时调用**: 收到错误日志或异常信息时
 
+**必需参数**: 必须提供 `logContent` 或 `context` 之一
+
 **参数**:
 ```json
 {
-  "logContent": "错误日志内容",
-  "context": "可选的额外上下文"
+  "logContent": "错误日志内容（必需，如果没有提供context）",
+  "context": "上下文信息（必需，如果没有提供logContent）",
+  "includeHistory": true
 }
 ```
 
-**示例**:
+**重要**: 如果不提供 `logContent` 或 `context`，将返回空信号列表。
+
+**正确示例**:
 ```
 用户报告: "PHP Fatal error: Uncaught Error: Call to undefined function processData()"
 
 → 调用 evolver_extract_signals
 → 参数: {"logContent": "PHP Fatal error: Uncaught Error: Call to undefined function processData() in /app/src/Processor.php:42"}
+```
+
+**错误示例**:
+```
+→ 调用 evolver_extract_signals
+→ 参数: {}  // ❌ 错误：没有提供 logContent 或 context
+→ 结果: {"signals": [], "count": 0}  // 空结果
 ```
 
 ### 2. 运行进化 (evolver_run)

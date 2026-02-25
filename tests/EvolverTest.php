@@ -692,6 +692,229 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // MCP Resources & Tools (via McpServer)
+    // -------------------------------------------------------------------------
+
+    /** Run a JSON-RPC sequence through the MCP server and collect responses. */
+    private function runMcpSequence(array $messages, string $dbPath = ':memory:'): array
+    {
+        // Write messages to a temp file to pipe into the server
+        $input = '';
+        foreach ($messages as $msg) {
+            $input .= json_encode($msg) . "\n";
+        }
+
+        $tmpIn  = tempnam(sys_get_temp_dir(), 'mcp_in_');
+        $tmpOut = tempnam(sys_get_temp_dir(), 'mcp_out_');
+        file_put_contents($tmpIn, $input);
+
+        $php = PHP_BINARY;
+        $script = dirname(__DIR__) . '/evolver.php';
+        shell_exec("{$php} {$script} --db " . escapeshellarg($dbPath) . " < " . escapeshellarg($tmpIn) . " > " . escapeshellarg($tmpOut) . " 2>/dev/null");
+
+        $raw = file_get_contents($tmpOut);
+        unlink($tmpIn);
+        unlink($tmpOut);
+
+        $responses = [];
+        foreach (explode("\n", trim($raw)) as $line) {
+            $line = trim($line);
+            if ($line !== '') {
+                $decoded = json_decode($line, true);
+                if (is_array($decoded)) {
+                    $responses[] = $decoded;
+                }
+            }
+        }
+        return $responses;
+    }
+
+    public function testMcpResourcesList(): void
+    {
+        $dbPath = tempnam(sys_get_temp_dir(), 'gep_db_') . '.db';
+        $responses = $this->runMcpSequence([
+            ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2024-11-05', 'capabilities' => new \stdClass()]],
+            ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'resources/list', 'params' => new \stdClass()],
+        ], $dbPath);
+        @unlink($dbPath);
+        @unlink($dbPath . '-wal');
+        @unlink($dbPath . '-shm');
+
+        // Find the resources/list response (id=2)
+        $listResp = null;
+        foreach ($responses as $r) {
+            if (($r['id'] ?? null) === 2) {
+                $listResp = $r;
+                break;
+            }
+        }
+        $this->assertNotNull($listResp, 'Expected resources/list response');
+        $this->assertArrayHasKey('result', $listResp);
+        $resources = $listResp['result']['resources'] ?? [];
+        $this->assertNotEmpty($resources, 'resources/list must return non-empty list');
+
+        $uris = array_column($resources, 'uri');
+        $this->assertContains('gep://genes', $uris);
+        $this->assertContains('gep://capsules', $uris);
+        $this->assertContains('gep://events', $uris);
+        $this->assertContains('gep://schema', $uris);
+        $this->assertContains('gep://stats', $uris);
+    }
+
+    public function testMcpResourceReadGenes(): void
+    {
+        $dbPath = tempnam(sys_get_temp_dir(), 'gep_db_') . '.db';
+        $responses = $this->runMcpSequence([
+            ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2024-11-05', 'capabilities' => new \stdClass()]],
+            ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'resources/read', 'params' => ['uri' => 'gep://genes']],
+        ], $dbPath);
+        @unlink($dbPath);
+        @unlink($dbPath . '-wal');
+        @unlink($dbPath . '-shm');
+
+        $readResp = null;
+        foreach ($responses as $r) {
+            if (($r['id'] ?? null) === 2) {
+                $readResp = $r;
+                break;
+            }
+        }
+        $this->assertNotNull($readResp);
+        $this->assertArrayHasKey('result', $readResp);
+        $contents = $readResp['result']['contents'] ?? [];
+        $this->assertNotEmpty($contents);
+        $this->assertSame('gep://genes', $contents[0]['uri']);
+        $data = json_decode($contents[0]['text'], true);
+        $this->assertSame('GEP_Genes', $data['type']);
+        $this->assertGreaterThan(0, $data['count']);
+        $this->assertNotEmpty($data['genes']);
+    }
+
+    public function testMcpResourceReadSchema(): void
+    {
+        $dbPath = tempnam(sys_get_temp_dir(), 'gep_db_') . '.db';
+        $responses = $this->runMcpSequence([
+            ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2024-11-05', 'capabilities' => new \stdClass()]],
+            ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'resources/read', 'params' => ['uri' => 'gep://schema']],
+        ], $dbPath);
+        @unlink($dbPath);
+
+        $readResp = null;
+        foreach ($responses as $r) {
+            if (($r['id'] ?? null) === 2) {
+                $readResp = $r;
+                break;
+            }
+        }
+        $this->assertNotNull($readResp);
+        $data = json_decode($readResp['result']['contents'][0]['text'], true);
+        $this->assertSame('GEP_Schema', $data['type']);
+        $this->assertSame('1.5.0', $data['schema_version']);
+        $this->assertCount(5, $data['objects']); // 5 GEP objects
+        $types = array_column($data['objects'], 'type');
+        $this->assertSame(['Mutation', 'PersonalityState', 'EvolutionEvent', 'Gene', 'Capsule'], $types);
+    }
+
+    public function testMcpResourceReadStats(): void
+    {
+        $dbPath = tempnam(sys_get_temp_dir(), 'gep_db_') . '.db';
+        $responses = $this->runMcpSequence([
+            ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2024-11-05', 'capabilities' => new \stdClass()]],
+            ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'resources/read', 'params' => ['uri' => 'gep://stats']],
+        ], $dbPath);
+        @unlink($dbPath);
+        @unlink($dbPath . '-wal');
+        @unlink($dbPath . '-shm');
+
+        $readResp = null;
+        foreach ($responses as $r) {
+            if (($r['id'] ?? null) === 2) {
+                $readResp = $r;
+                break;
+            }
+        }
+        $this->assertNotNull($readResp);
+        $data = json_decode($readResp['result']['contents'][0]['text'], true);
+        $this->assertSame('GEP_Stats', $data['type']);
+        $this->assertArrayHasKey('store', $data);
+        $this->assertArrayHasKey('env_fingerprint', $data);
+        $this->assertArrayHasKey('timestamp', $data);
+        $this->assertArrayHasKey('php_version', $data['env_fingerprint']);
+    }
+
+    public function testMcpResourceReadUnknownUri(): void
+    {
+        $dbPath = tempnam(sys_get_temp_dir(), 'gep_db_') . '.db';
+        $responses = $this->runMcpSequence([
+            ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2024-11-05', 'capabilities' => new \stdClass()]],
+            ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'resources/read', 'params' => ['uri' => 'gep://nonexistent']],
+        ], $dbPath);
+        @unlink($dbPath);
+
+        $readResp = null;
+        foreach ($responses as $r) {
+            if (($r['id'] ?? null) === 2) {
+                $readResp = $r;
+                break;
+            }
+        }
+        $this->assertNotNull($readResp);
+        // Should return an error response
+        $this->assertArrayHasKey('error', $readResp);
+    }
+
+    public function testToolDeleteGene(): void
+    {
+        // Seed a gene first
+        $this->store->upsertGene([
+            'type' => 'Gene',
+            'id' => 'gene_to_delete',
+            'category' => 'repair',
+            'signals_match' => ['test'],
+            'strategy' => ['step 1'],
+        ]);
+
+        $genesBefore = $this->store->loadGenes();
+        $countBefore = count($genesBefore);
+
+        $this->store->deleteGene('gene_to_delete');
+        $genesAfter = $this->store->loadGenes();
+        $this->assertCount($countBefore - 1, $genesAfter);
+        $this->assertNull($this->store->getGene('gene_to_delete'));
+    }
+
+    public function testMcpToolsListIncludesDeleteGene(): void
+    {
+        $dbPath = tempnam(sys_get_temp_dir(), 'gep_db_') . '.db';
+        $responses = $this->runMcpSequence([
+            ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2024-11-05', 'capabilities' => new \stdClass()]],
+            ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => new \stdClass()],
+        ], $dbPath);
+        @unlink($dbPath);
+
+        $listResp = null;
+        foreach ($responses as $r) {
+            if (($r['id'] ?? null) === 2) {
+                $listResp = $r;
+                break;
+            }
+        }
+        $this->assertNotNull($listResp);
+        $tools = $listResp['result']['tools'] ?? [];
+        $toolNames = array_column($tools, 'name');
+        $this->assertContains('evolver_delete_gene', $toolNames);
+        // Verify the full expected set of tools
+        $expectedTools = [
+            'evolver_run', 'evolver_solidify', 'evolver_extract_signals',
+            'evolver_list_genes', 'evolver_list_capsules', 'evolver_list_events',
+            'evolver_upsert_gene', 'evolver_delete_gene', 'evolver_stats',
+        ];
+        foreach ($expectedTools as $expected) {
+            $this->assertContains($expected, $toolNames, "Missing tool: {$expected}");
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Integration tests
     // -------------------------------------------------------------------------
 

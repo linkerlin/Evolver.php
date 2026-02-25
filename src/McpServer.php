@@ -99,7 +99,8 @@ final class McpServer
             'initialized' => null, // notification, no response
             'tools/list' => $this->handleToolsList(),
             'tools/call' => $this->handleToolsCall($params),
-            'resources/list' => ['resources' => []],
+            'resources/list' => $this->handleResourcesList(),
+            'resources/read' => $this->handleResourcesRead($params),
             'prompts/list' => ['prompts' => []],
             'ping' => [],
             default => throw new \RuntimeException("Method not found: {$method}"),
@@ -148,6 +149,7 @@ final class McpServer
             'evolver_list_capsules' => $this->toolEvolverListCapsules($arguments),
             'evolver_list_events' => $this->toolEvolverListEvents($arguments),
             'evolver_upsert_gene' => $this->toolEvolverUpsertGene($arguments),
+            'evolver_delete_gene' => $this->toolEvolverDeleteGene($arguments),
             'evolver_stats' => $this->toolEvolverStats(),
             default => throw new \InvalidArgumentException("Unknown tool: {$toolName}"),
         };
@@ -159,6 +161,238 @@ final class McpServer
                     'text' => json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 ],
             ],
+        ];
+    }
+
+    // -------------------------------------------------------------------------
+    // MCP Resources
+    // -------------------------------------------------------------------------
+
+    /**
+     * Define the static resource catalogue for GEP assets.
+     * Each resource has a stable URI, a human-readable name, and a MIME type.
+     */
+    private function getResourceDefinitions(): array
+    {
+        return [
+            [
+                'uri'         => 'gep://genes',
+                'name'        => 'GEP Genes',
+                'description' => '🧬 All evolution Gene templates stored in the local GEP asset store. '
+                    . 'Genes are reusable strategy blueprints matched against extracted signals.',
+                'mimeType'    => 'application/json',
+            ],
+            [
+                'uri'         => 'gep://capsules',
+                'name'        => 'GEP Capsules',
+                'description' => '💊 All successful evolution Capsule snapshots. '
+                    . 'Capsules record past successful fixes/innovations for reuse.',
+                'mimeType'    => 'application/json',
+            ],
+            [
+                'uri'         => 'gep://events',
+                'name'        => 'GEP Evolution Events',
+                'description' => '📜 Recent EvolutionEvent audit trail (last 50). '
+                    . 'Each event records intent, signals, gene used, blast radius, and outcome.',
+                'mimeType'    => 'application/json',
+            ],
+            [
+                'uri'         => 'gep://schema',
+                'name'        => 'GEP Protocol Schema',
+                'description' => '📐 The Genome Evolution Protocol (GEP) schema definition — '
+                    . 'the 5 mandatory output objects (Mutation, PersonalityState, EvolutionEvent, Gene, Capsule) '
+                    . 'and their field specifications.',
+                'mimeType'    => 'application/json',
+            ],
+            [
+                'uri'         => 'gep://stats',
+                'name'        => 'GEP Store Statistics',
+                'description' => '📊 Gene, Capsule, Event, and FailedCapsule counts, plus the current environment fingerprint.',
+                'mimeType'    => 'application/json',
+            ],
+        ];
+    }
+
+    private function handleResourcesList(): array
+    {
+        return ['resources' => $this->getResourceDefinitions()];
+    }
+
+    private function handleResourcesRead(array $params): array
+    {
+        $uri = $params['uri'] ?? throw new \InvalidArgumentException('uri required for resources/read');
+
+        $content = match ($uri) {
+            'gep://genes'    => $this->resourceGenes(),
+            'gep://capsules' => $this->resourceCapsules(),
+            'gep://events'   => $this->resourceEvents(),
+            'gep://schema'   => $this->resourceSchema(),
+            'gep://stats'    => $this->resourceStats(),
+            default          => throw new \InvalidArgumentException("Unknown resource URI: {$uri}"),
+        };
+
+        return [
+            'contents' => [
+                [
+                    'uri'      => $uri,
+                    'mimeType' => 'application/json',
+                    'text'     => json_encode($content, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                ],
+            ],
+        ];
+    }
+
+    // -------------------------------------------------------------------------
+    // Resource content builders
+    // -------------------------------------------------------------------------
+
+    private function resourceGenes(): array
+    {
+        $genes = $this->store->loadGenes();
+        return [
+            'type'    => 'GEP_Genes',
+            'version' => 1,
+            'count'   => count($genes),
+            'genes'   => $genes,
+        ];
+    }
+
+    private function resourceCapsules(): array
+    {
+        $capsules = $this->store->loadCapsules(100);
+        return [
+            'type'     => 'GEP_Capsules',
+            'count'    => count($capsules),
+            'capsules' => $capsules,
+        ];
+    }
+
+    private function resourceEvents(): array
+    {
+        $events = $this->store->loadRecentEvents(50);
+        return [
+            'type'   => 'GEP_EvolutionEvents',
+            'count'  => count($events),
+            'events' => $events,
+        ];
+    }
+
+    private function resourceSchema(): array
+    {
+        return [
+            'type'           => 'GEP_Schema',
+            'schema_version' => '1.5.0',
+            'description'    => 'Genome Evolution Protocol — mandatory output objects',
+            'objects'        => [
+                [
+                    'index'       => 0,
+                    'type'        => 'Mutation',
+                    'role'        => 'The Trigger — MUST be first',
+                    'required'    => true,
+                    'fields'      => [
+                        'type'            => 'string (literal "Mutation")',
+                        'id'              => 'string (mut_<timestamp>)',
+                        'category'        => 'repair | optimize | innovate',
+                        'trigger_signals' => 'string[]',
+                        'target'          => 'string (module or gene_id)',
+                        'expected_effect' => 'string',
+                        'risk_level'      => 'low | medium | high',
+                        'rationale'       => 'string',
+                    ],
+                ],
+                [
+                    'index'    => 1,
+                    'type'     => 'PersonalityState',
+                    'role'     => 'The Mood',
+                    'required' => true,
+                    'fields'   => [
+                        'type'           => 'string (literal "PersonalityState")',
+                        'rigor'          => 'float 0.0–1.0',
+                        'creativity'     => 'float 0.0–1.0',
+                        'verbosity'      => 'float 0.0–1.0',
+                        'risk_tolerance' => 'float 0.0–1.0',
+                        'obedience'      => 'float 0.0–1.0',
+                    ],
+                ],
+                [
+                    'index'    => 2,
+                    'type'     => 'EvolutionEvent',
+                    'role'     => 'The Record',
+                    'required' => true,
+                    'fields'   => [
+                        'type'              => 'string (literal "EvolutionEvent")',
+                        'schema_version'    => 'string (e.g. "1.5.0")',
+                        'id'                => 'string (evt_<timestamp>)',
+                        'parent'            => 'string | null',
+                        'intent'            => 'repair | optimize | innovate',
+                        'signals'           => 'string[]',
+                        'genes_used'        => 'string[]',
+                        'mutation_id'       => 'string',
+                        'personality_state' => 'PersonalityState object',
+                        'blast_radius'      => '{ "files": int, "lines": int }',
+                        'outcome'           => '{ "status": "success|failed", "score": float }',
+                        'env_fingerprint'   => 'EnvFingerprint object (PHP runtime info)',
+                    ],
+                ],
+                [
+                    'index'    => 3,
+                    'type'     => 'Gene',
+                    'role'     => 'The Knowledge — reuse/update existing ID if possible',
+                    'required' => true,
+                    'fields'   => [
+                        'type'             => 'string (literal "Gene")',
+                        'schema_version'   => 'string',
+                        'id'               => 'string (gene_<name>)',
+                        'category'         => 'repair | optimize | innovate',
+                        'signals_match'    => 'string[] (substring or /regex/)',
+                        'preconditions'    => 'string[]',
+                        'strategy'         => 'string[] (ordered steps)',
+                        'constraints'      => '{ "max_files": int, "forbidden_paths": string[] }',
+                        'validation'       => 'string[] (allowed: php/composer/phpunit/phpcs/phpstan)',
+                        'epigenetic_marks' => 'string[] (optional)',
+                    ],
+                ],
+                [
+                    'index'    => 4,
+                    'type'     => 'Capsule',
+                    'role'     => 'The Result — only on success',
+                    'required' => true,
+                    'fields'   => [
+                        'type'           => 'string (literal "Capsule")',
+                        'schema_version' => 'string',
+                        'id'             => 'string (capsule_<timestamp>)',
+                        'trigger'        => 'string[] (signals that triggered this)',
+                        'gene'           => 'string (gene_id used)',
+                        'summary'        => 'string (one sentence)',
+                        'confidence'     => 'float 0.0–1.0',
+                        'blast_radius'   => '{ "files": int, "lines": int }',
+                    ],
+                ],
+            ],
+            'rules' => [
+                'Output RAW JSON ONLY — no markdown code blocks',
+                'Output separate JSON objects — DO NOT wrap in a single array',
+                'Missing any object = PROTOCOL FAILURE',
+                'Validate JSON syntax before output',
+                'Objects must appear in order: Mutation → PersonalityState → EvolutionEvent → Gene → Capsule',
+            ],
+            'safety' => [
+                'blast_radius_hard_limits' => ['files' => 60, 'lines' => 20000],
+                'validation_command_whitelist' => ['php', 'composer', 'phpunit', 'phpcs', 'phpstan'],
+                'forbidden_shell_operators' => [';', '&&', '||', '|', '>', '<', '`', '$('],
+            ],
+        ];
+    }
+
+    private function resourceStats(): array
+    {
+        $stats = $this->store->getStats();
+        $fp = EnvFingerprint::capture();
+        return [
+            'type'            => 'GEP_Stats',
+            'store'           => $stats,
+            'env_fingerprint' => $fp,
+            'timestamp'       => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
         ];
     }
 
@@ -396,6 +630,31 @@ final class McpServer
         ];
     }
 
+    private function toolEvolverDeleteGene(array $args): array
+    {
+        $geneId = $args['geneId'] ?? null;
+        if (empty($geneId) || !is_string($geneId)) {
+            throw new \InvalidArgumentException('geneId (string) required');
+        }
+
+        $existing = $this->store->getGene($geneId);
+        if ($existing === null) {
+            return [
+                'ok' => false,
+                'geneId' => $geneId,
+                'message' => 'Gene not found',
+            ];
+        }
+
+        $this->store->deleteGene($geneId);
+
+        return [
+            'ok' => true,
+            'geneId' => $geneId,
+            'message' => 'Gene deleted successfully',
+        ];
+    }
+
     private function toolEvolverStats(): array
     {
         $stats = $this->store->getStats();
@@ -571,6 +830,20 @@ final class McpServer
                         ],
                     ],
                     'required' => ['gene'],
+                ],
+            ],
+            [
+                'name' => 'evolver_delete_gene',
+                'description' => '🗑️ Delete a Gene from the store by its ID. Use with care — this permanently removes the Gene.',
+                'inputSchema' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'geneId' => [
+                            'type' => 'string',
+                            'description' => 'The ID of the Gene to delete (e.g. "gene_gep_repair_from_errors")',
+                        ],
+                    ],
+                    'required' => ['geneId'],
                 ],
             ],
             [

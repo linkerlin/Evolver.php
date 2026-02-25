@@ -257,7 +257,9 @@ final class McpServer
             ];
         }
 
-        return [
+        // Build MCP-compliant response
+        // Note: Some clients expect specific fields, so we include both standard and extended formats
+        $response = [
             'content' => [
                 [
                     'type' => 'text',
@@ -265,6 +267,13 @@ final class McpServer
                 ],
             ],
         ];
+        
+        // Add isError flag if result indicates error
+        if (is_array($result) && isset($result['ok']) && $result['ok'] === false) {
+            $response['isError'] = true;
+        }
+        
+        return $response;
     }
 
     // -------------------------------------------------------------------------

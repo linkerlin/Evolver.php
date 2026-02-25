@@ -133,9 +133,18 @@ final class McpServer
             if ($id !== null) {
                 $this->sendResult($id, $result);
             }
-        } catch (\Throwable $e) {
+        } catch (\InvalidArgumentException $e) {
             if ($id !== null) {
-                $this->sendError($id, -32603, 'Internal error: ' . $e->getMessage(), null);
+                $this->sendError($id, -32602, 'Invalid params: ' . $e->getMessage(), null);
+            }
+        } catch (\RuntimeException $e) {
+            if ($id !== null) {
+                $this->sendError($id, -32603, $e->getMessage(), null);
+            }
+        } catch (\Throwable $e) {
+            error_log('[McpServer] Unexpected error: ' . $e->getMessage());
+            if ($id !== null) {
+                $this->sendError($id, -32603, 'Internal error', null);
             }
         }
     }
@@ -187,24 +196,66 @@ final class McpServer
 
     private function handleToolsCall(array $params): array
     {
+        // Debug: Log received params
+        error_log('[McpServer] tools/call params: ' . json_encode($params));
+        
         $toolName = $params['name'] ?? throw new \InvalidArgumentException('Tool name required');
-        $arguments = $params['arguments'] ?? [];
+        
+        // Handle different parameter formats from various MCP clients
+        // Some clients use 'arguments', others use 'input'
+        $arguments = $params['arguments'] ?? $params['input'] ?? [];
+        
+        // Ensure arguments is an array
+        if (!is_array($arguments)) {
+            $arguments = [];
+        }
 
-        $result = match ($toolName) {
-            'evolver_run' => $this->toolEvolverRun($arguments),
-            'evolver_solidify' => $this->toolEvolverSolidify($arguments),
-            'evolver_extract_signals' => $this->toolEvolverExtractSignals($arguments),
-            'evolver_list_genes' => $this->toolEvolverListGenes($arguments),
-            'evolver_list_capsules' => $this->toolEvolverListCapsules($arguments),
-            'evolver_list_events' => $this->toolEvolverListEvents($arguments),
-            'evolver_upsert_gene' => $this->toolEvolverUpsertGene($arguments),
-            'evolver_delete_gene' => $this->toolEvolverDeleteGene($arguments),
-            'evolver_stats' => $this->toolEvolverStats(),
-            'evolver_safety_status' => $this->toolEvolverSafetyStatus(),
-            'evolver_cleanup' => $this->toolEvolverCleanup(),
-            'evolver_sync_to_hub' => $this->toolEvolverSyncToHub(),
-            default => throw new \InvalidArgumentException("Unknown tool: {$toolName}"),
-        };
+        try {
+            $result = match ($toolName) {
+                'evolver_run' => $this->toolEvolverRun($arguments),
+                'evolver_solidify' => $this->toolEvolverSolidify($arguments),
+                'evolver_extract_signals' => $this->toolEvolverExtractSignals($arguments),
+                'evolver_list_genes' => $this->toolEvolverListGenes($arguments),
+                'evolver_list_capsules' => $this->toolEvolverListCapsules($arguments),
+                'evolver_list_events' => $this->toolEvolverListEvents($arguments),
+                'evolver_upsert_gene' => $this->toolEvolverUpsertGene($arguments),
+                'evolver_delete_gene' => $this->toolEvolverDeleteGene($arguments),
+                'evolver_stats' => $this->toolEvolverStats(),
+                'evolver_safety_status' => $this->toolEvolverSafetyStatus(),
+                'evolver_cleanup' => $this->toolEvolverCleanup(),
+                'evolver_sync_to_hub' => $this->toolEvolverSyncToHub(),
+                default => throw new \InvalidArgumentException("Unknown tool: {$toolName}"),
+            };
+        } catch (\InvalidArgumentException $e) {
+            // Return proper MCP error for invalid arguments
+            error_log('[McpServer] Invalid argument: ' . $e->getMessage());
+            return [
+                'content' => [
+                    [
+                        'type' => 'text',
+                        'text' => json_encode([
+                            'ok' => false,
+                            'error' => 'Invalid argument: ' . $e->getMessage(),
+                        ]),
+                    ],
+                ],
+                'isError' => true,
+            ];
+        } catch (\Throwable $e) {
+            error_log('[McpServer] Tool execution error: ' . $e->getMessage());
+            return [
+                'content' => [
+                    [
+                        'type' => 'text',
+                        'text' => json_encode([
+                            'ok' => false,
+                            'error' => $e->getMessage(),
+                        ]),
+                    ],
+                ],
+                'isError' => true,
+            ];
+        }
 
         return [
             'content' => [

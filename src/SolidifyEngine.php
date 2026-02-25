@@ -6,6 +6,7 @@ namespace Evolver;
 
 /**
  * Solidify evolution results - validate and record evolution events.
+ * Updated for GEP 1.6.0 protocol compliance.
  * PHP port of solidify.js from EvoMap/evolver.
  */
 final class SolidifyEngine
@@ -45,7 +46,9 @@ final class SolidifyEngine
      *   personalityState?: array,
      *   blastRadius?: array,
      *   dryRun?: bool,
-     *   context?: string
+     *   context?: string,
+     *   mutationsTried?: int,
+     *   totalCycles?: int,
      * } $input
      */
     public function solidify(array $input): array
@@ -61,6 +64,8 @@ final class SolidifyEngine
         $blastRadius = $input['blastRadius'] ?? ['files' => 0, 'lines' => 0];
         $dryRun = (bool)($input['dryRun'] ?? false);
         $context = $input['context'] ?? '';
+        $mutationsTried = (int)($input['mutationsTried'] ?? 1);
+        $totalCycles = (int)($input['totalCycles'] ?? 1);
 
         $nowIso = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
         $timestamp = time();
@@ -114,56 +119,93 @@ final class SolidifyEngine
         $eventId = "evt_{$timestamp}_{$randomSuffix}";
         $mutationId = $mutation['id'] ?? "mut_{$timestamp}_{$randomSuffix}";
         $geneId = $gene['id'] ?? null;
-        $capsuleId = "capsule_{$timestamp}_{$randomSuffix}";
+        $capsuleId = $capsule['id'] ?? "capsule_{$timestamp}_{$randomSuffix}";
 
         // Capture environment fingerprint for the event record
         $envFingerprint = EnvFingerprint::capture();
 
-        // Build evolution event
+        // Compute success streak if we have a gene
+        $successStreak = 0;
+        if ($geneId !== null) {
+            $successStreak = $this->store->computeSuccessStreak($geneId, $signals);
+        }
+
+        // Build evolution event with GEP 1.6.0 fields
         $evolutionEvent = array_merge($event ?? [], [
             'type' => 'EvolutionEvent',
-            'schema_version' => '1.5.0',
+            'schema_version' => ContentHash::SCHEMA_VERSION,
             'id' => $eventId,
+            'asset_id' => null, // Will be computed below
             'parent' => $parentEventId,
             'intent' => $intent,
             'signals' => $signals,
             'genes_used' => $geneId ? [$geneId] : [],
             'mutation_id' => $mutationId,
-            'personality_state' => $personalityState ?? ['rigor' => 0.8, 'creativity' => 0.3, 'verbosity' => 0.5, 'risk_tolerance' => 0.2, 'obedience' => 0.9],
+            'personality_state' => $personalityState ?? [
+                'rigor' => 0.8, 
+                'creativity' => 0.3, 
+                'verbosity' => 0.5, 
+                'risk_tolerance' => 0.2, 
+                'obedience' => 0.9
+            ],
             'blast_radius' => $blastRadius,
             'outcome' => [
                 'status' => empty($warnings) ? 'success' : 'partial',
                 'score' => empty($warnings) ? 0.8 : 0.5,
             ],
             'env_fingerprint' => $envFingerprint,
+            'mutations_tried' => $mutationsTried,
+            'total_cycles' => $totalCycles,
             'created_at' => $nowIso,
             'summary' => $summary,
         ]);
 
-        // Build gene update
+        // Compute asset_id for the event
+        $evolutionEvent['asset_id'] = ContentHash::computeAssetId($evolutionEvent);
+
+        // Build gene update with GEP 1.6.0 fields
         $geneToStore = null;
         if ($gene !== null) {
             $geneToStore = array_merge($gene, [
                 'type' => 'Gene',
-                'schema_version' => '1.5.0',
+                'schema_version' => ContentHash::SCHEMA_VERSION,
+                'asset_id' => ContentHash::computeAssetId($gene),
                 'updated_at' => $nowIso,
             ]);
         }
 
-        // Build capsule (on success)
+        // Build capsule (on success) with GEP 1.6.0 fields
         $capsuleToStore = null;
         if ($capsule !== null || (empty($warnings) && $intent !== 'repair')) {
-            $capsuleToStore = array_merge($capsule ?? [], [
+            $capsuleData = $capsule ?? [];
+            $capsuleOutcome = $capsuleData['outcome'] ?? [
+                'status' => empty($warnings) ? 'success' : 'partial',
+                'score' => empty($warnings) ? 0.8 : 0.5,
+            ];
+            
+            $capsuleToStore = array_merge($capsuleData, [
                 'type' => 'Capsule',
-                'schema_version' => '1.5.0',
-                'id' => $capsule['id'] ?? $capsuleId,
+                'schema_version' => ContentHash::SCHEMA_VERSION,
+                'id' => $capsuleId,
+                'asset_id' => null, // Will be computed below
                 'trigger' => $signals,
                 'gene' => $geneId,
                 'summary' => $summary,
                 'confidence' => empty($warnings) ? 0.8 : 0.5,
                 'blast_radius' => $blastRadius,
+                'outcome' => $capsuleOutcome,
+                'env_fingerprint' => $envFingerprint,
+                'success_streak' => $successStreak,
                 'created_at' => $nowIso,
             ]);
+
+            // Add content if provided or extract from context
+            if (!empty($context)) {
+                $capsuleToStore['content'] = $context;
+            }
+
+            // Compute asset_id for the capsule
+            $capsuleToStore['asset_id'] = ContentHash::computeAssetId($capsuleToStore);
         }
 
         if (!$dryRun) {
@@ -178,6 +220,24 @@ final class SolidifyEngine
             // Store capsule
             if ($capsuleToStore !== null) {
                 $this->store->appendCapsule($capsuleToStore);
+                
+                // Mark for network sync
+                $this->store->updateSyncStatus(
+                    'capsule',
+                    $capsuleToStore['id'],
+                    $capsuleToStore['asset_id'],
+                    'pending'
+                );
+            }
+
+            // Mark gene for network sync
+            if ($geneToStore !== null) {
+                $this->store->updateSyncStatus(
+                    'gene',
+                    $geneToStore['id'],
+                    $geneToStore['asset_id'],
+                    'pending'
+                );
             }
         }
 
@@ -347,5 +407,40 @@ final class SolidifyEngine
         }
 
         return $objects;
+    }
+
+    /**
+     * Compute GDI (Genome Distribution Index) score for a capsule.
+     * Higher score = better quality asset.
+     */
+    public function computeGdiScore(array $capsule): float
+    {
+        $score = 0.0;
+        
+        // Base score from outcome
+        $outcomeScore = (float)($capsule['outcome']['score'] ?? 0.5);
+        $score += $outcomeScore * 0.4;
+        
+        // Confidence factor
+        $confidence = (float)($capsule['confidence'] ?? 0.5);
+        $score += $confidence * 0.3;
+        
+        // Success streak bonus
+        $streak = (int)($capsule['success_streak'] ?? 0);
+        $score += min($streak * 0.05, 0.15); // Max 0.15 from streak
+        
+        // Small blast radius bonus (precision)
+        $files = (int)($capsule['blast_radius']['files'] ?? 1);
+        $lines = (int)($capsule['blast_radius']['lines'] ?? 1);
+        if ($files <= 5 && $lines <= 100) {
+            $score += 0.1; // Precision bonus
+        }
+        
+        // Has content bonus
+        if (!empty($capsule['content'])) {
+            $score += 0.05;
+        }
+        
+        return min($score, 1.0);
     }
 }

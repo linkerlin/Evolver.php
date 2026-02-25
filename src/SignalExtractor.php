@@ -6,6 +6,7 @@ namespace Evolver;
 
 /**
  * Extracts evolution signals from log/session/context content.
+ * Enhanced with advanced repair loop detection.
  * PHP port of signals.js from EvoMap/evolver.
  */
 final class SignalExtractor
@@ -24,6 +25,13 @@ final class SignalExtractor
         'repair_loop_detected',
         'force_innovation_after_repair_loop',
     ];
+
+    /** Repair loop detection thresholds */
+    private const REPAIR_LOOP_THRESHOLD = 3;
+    private const FORCE_INNOVATION_THRESHOLD = 5;
+    private const STAGNATION_THRESHOLD = 3;
+    private const FAILURE_RATIO_THRESHOLD = 0.6;
+    private const OSCILLATION_THRESHOLD = 2;
 
     /**
      * Extract signals from provided context/log content.
@@ -141,22 +149,37 @@ final class SignalExtractor
             $signals[] = 'stable_success_plateau';
         }
 
-        // --- Repair loop / stagnation detection from recent events ---
+        // --- Advanced repair loop / stagnation detection from recent events ---
         $recentEvents = $input['recentEvents'] ?? [];
         if (!empty($recentEvents)) {
             $history = $this->analyzeRecentHistory($recentEvents);
 
-            if ($history['consecutiveRepairCount'] >= 3) {
+            // Basic repair loop detection
+            if ($history['consecutiveRepairCount'] >= self::REPAIR_LOOP_THRESHOLD) {
                 $signals[] = 'repair_loop_detected';
             }
-            if ($history['consecutiveRepairCount'] >= 5) {
+            
+            // Force innovation after extended repair loop
+            if ($history['consecutiveRepairCount'] >= self::FORCE_INNOVATION_THRESHOLD) {
                 $signals[] = 'force_innovation_after_repair_loop';
             }
-            if ($history['consecutiveEmptyCycles'] >= 3) {
+            
+            // Stagnation detection
+            if ($history['consecutiveEmptyCycles'] >= self::STAGNATION_THRESHOLD) {
                 $signals[] = 'evolution_stagnation_detected';
             }
 
-            // Remove suppressed signals
+            // High failure ratio detection
+            if ($history['recentFailureRatio'] >= self::FAILURE_RATIO_THRESHOLD) {
+                $signals[] = 'high_failure_rate';
+            }
+
+            // Oscillation detection (same signal appearing and disappearing)
+            if ($history['oscillationCount'] >= self::OSCILLATION_THRESHOLD) {
+                $signals[] = 'signal_oscillation_detected';
+            }
+
+            // Remove suppressed signals (appeared too frequently without resolution)
             $signals = array_filter($signals, function ($s) use ($history) {
                 $key = str_starts_with($s, 'errsig:') ? 'errsig' :
                     (str_starts_with($s, 'recurring_errsig') ? 'recurring_errsig' : $s);
@@ -169,6 +192,7 @@ final class SignalExtractor
 
     /**
      * Analyze recent evolution history for de-duplication and loop detection.
+     * Enhanced with oscillation detection and trend analysis.
      */
     public function analyzeRecentHistory(array $recentEvents): array
     {
@@ -184,6 +208,9 @@ final class SignalExtractor
                 'recentFailureRatio' => 0.0,
                 'signalFreq' => [],
                 'geneFreq' => [],
+                'oscillationCount' => 0,
+                'uniqueFilesTouched' => [],
+                'repeatedFileModifications' => [],
             ];
         }
 
@@ -203,7 +230,10 @@ final class SignalExtractor
         $tail = array_slice($recent, -8);
         $signalFreq = [];
         $geneFreq = [];
-        foreach ($tail as $evt) {
+        $filesTouched = [];
+        $fileModificationCounts = [];
+        
+        foreach ($tail as $idx => $evt) {
             foreach ($evt['signals'] ?? [] as $s) {
                 $s = (string)$s;
                 $key = str_starts_with($s, 'errsig:') ? 'errsig' :
@@ -212,6 +242,16 @@ final class SignalExtractor
             }
             foreach ($evt['genes_used'] ?? [] as $g) {
                 $geneFreq[(string)$g] = ($geneFreq[(string)$g] ?? 0) + 1;
+            }
+            
+            // Track files touched
+            $blastRadius = $evt['blast_radius'] ?? null;
+            if ($blastRadius && !empty($blastRadius['files'])) {
+                $eventFiles = $evt['modified_files'] ?? [];
+                foreach ($eventFiles as $file) {
+                    $filesTouched[] = $file;
+                    $fileModificationCounts[$file] = ($fileModificationCounts[$file] ?? 0) + 1;
+                }
             }
         }
 
@@ -222,6 +262,7 @@ final class SignalExtractor
                 $suppressedSignalsArray[] = $sig;
             }
         }
+        
         // Use a simple object with a contains method
         $suppressedSignals = new class($suppressedSignalsArray) {
             private array $set;
@@ -270,6 +311,36 @@ final class SignalExtractor
             }
         }
 
+        // Detect oscillation (signals appearing and disappearing)
+        $oscillationCount = 0;
+        $signalAppearances = [];
+        foreach ($recent as $idx => $evt) {
+            foreach ($evt['signals'] ?? [] as $s) {
+                $key = str_starts_with($s, 'errsig:') ? 'errsig' :
+                    (str_starts_with($s, 'recurring_errsig') ? 'recurring_errsig' : $s);
+                if (!isset($signalAppearances[$key])) {
+                    $signalAppearances[$key] = ['first' => $idx, 'last' => $idx, 'count' => 0];
+                }
+                $signalAppearances[$key]['last'] = $idx;
+                $signalAppearances[$key]['count']++;
+            }
+        }
+        
+        foreach ($signalAppearances as $key => $appearances) {
+            // If a signal appears, disappears, then reappears, that's oscillation
+            if ($appearances['count'] >= 2 && ($appearances['last'] - $appearances['first']) >= 2) {
+                $oscillationCount++;
+            }
+        }
+
+        // Find repeatedly modified files (potential thrashing)
+        $repeatedFileModifications = [];
+        foreach ($fileModificationCounts as $file => $count) {
+            if ($count >= 3) {
+                $repeatedFileModifications[] = $file;
+            }
+        }
+
         return [
             'suppressedSignals' => $suppressedSignals,
             'recentIntents' => array_map(fn($e) => $e['intent'] ?? 'unknown', $recent),
@@ -281,9 +352,15 @@ final class SignalExtractor
             'recentFailureRatio' => count($tail) > 0 ? $recentFailureCount / count($tail) : 0.0,
             'signalFreq' => $signalFreq,
             'geneFreq' => $geneFreq,
+            'oscillationCount' => $oscillationCount,
+            'uniqueFilesTouched' => array_unique($filesTouched),
+            'repeatedFileModifications' => $repeatedFileModifications,
         ];
     }
 
+    /**
+     * Check if any opportunity signal is present.
+     */
     public function hasOpportunitySignal(array $signals): bool
     {
         foreach (self::OPPORTUNITY_SIGNALS as $opp) {
@@ -292,5 +369,19 @@ final class SignalExtractor
             }
         }
         return false;
+    }
+
+    /**
+     * Get repair loop detection thresholds for external use.
+     */
+    public static function getThresholds(): array
+    {
+        return [
+            'repair_loop' => self::REPAIR_LOOP_THRESHOLD,
+            'force_innovation' => self::FORCE_INNOVATION_THRESHOLD,
+            'stagnation' => self::STAGNATION_THRESHOLD,
+            'failure_ratio' => self::FAILURE_RATIO_THRESHOLD,
+            'oscillation' => self::OSCILLATION_THRESHOLD,
+        ];
     }
 }

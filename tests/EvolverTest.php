@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace Evolver\Tests;
 
+use Evolver\ContentHash;
 use Evolver\Database;
 use Evolver\EnvFingerprint;
+use Evolver\GepA2AProtocol;
 use Evolver\GepAssetStore;
 use Evolver\GeneSelector;
+use Evolver\SafetyController;
 use Evolver\SignalExtractor;
 use Evolver\PromptBuilder;
 use Evolver\SolidifyEngine;
+use Evolver\SourceProtector;
+use Evolver\Ops\SignalDeduplicator;
 use PHPUnit\Framework\TestCase;
 
 class EvolverTest extends TestCase
@@ -809,7 +814,7 @@ class EvolverTest extends TestCase
         $this->assertNotNull($readResp);
         $data = json_decode($readResp['result']['contents'][0]['text'], true);
         $this->assertSame('GEP_Schema', $data['type']);
-        $this->assertSame('1.5.0', $data['schema_version']);
+        $this->assertSame('1.6.0', $data['schema_version']);
         $this->assertCount(5, $data['objects']); // 5 GEP objects
         $types = array_column($data['objects'], 'type');
         $this->assertSame(['Mutation', 'PersonalityState', 'EvolutionEvent', 'Gene', 'Capsule'], $types);
@@ -912,6 +917,218 @@ class EvolverTest extends TestCase
         foreach ($expectedTools as $expected) {
             $this->assertContains($expected, $toolNames, "Missing tool: {$expected}");
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // ContentHash tests
+    // -------------------------------------------------------------------------
+
+    public function testContentHashCanonicalize(): void
+    {
+        $obj = ['b' => 2, 'a' => 1];
+        $canonical = ContentHash::canonicalize($obj);
+        $this->assertSame('{"a":1,"b":2}', $canonical);
+    }
+
+    public function testContentHashComputeAssetId(): void
+    {
+        $gene = [
+            'type' => 'Gene',
+            'id' => 'gene_test',
+            'category' => 'repair',
+        ];
+        $assetId = ContentHash::computeAssetId($gene);
+        $this->assertStringStartsWith('sha256:', $assetId);
+        $this->assertSame(71, strlen($assetId)); // 'sha256:' + 64 hex chars
+    }
+
+    public function testContentHashVerifyAssetId(): void
+    {
+        $gene = [
+            'type' => 'Gene',
+            'id' => 'gene_test',
+            'category' => 'repair',
+        ];
+        $assetId = ContentHash::computeAssetId($gene);
+        $gene['asset_id'] = $assetId;
+        
+        $this->assertTrue(ContentHash::verifyAssetId($gene));
+        
+        // Tamper with data
+        $gene['category'] = 'optimize';
+        $this->assertFalse(ContentHash::verifyAssetId($gene));
+    }
+
+    public function testContentHashExcludesAssetId(): void
+    {
+        $gene = [
+            'type' => 'Gene',
+            'id' => 'gene_test',
+            'category' => 'repair',
+        ];
+        $assetId1 = ContentHash::computeAssetId($gene);
+        
+        // Add asset_id and recompute - should get same result
+        $gene['asset_id'] = $assetId1;
+        $assetId2 = ContentHash::computeAssetId($gene);
+        
+        $this->assertSame($assetId1, $assetId2);
+    }
+
+    // -------------------------------------------------------------------------
+    // SourceProtector tests
+    // -------------------------------------------------------------------------
+
+    public function testSourceProtectorDetectsProtectedFiles(): void
+    {
+        $protector = new SourceProtector();
+        
+        // These should be protected
+        $this->assertTrue($protector->isProtected('src/McpServer.php'));
+        $this->assertTrue($protector->isProtected('src/Database.php'));
+        $this->assertTrue($protector->isProtected('evolver.php'));
+        
+        // These should not be protected
+        $this->assertFalse($protector->isProtected('src/SomeUserFile.php'));
+        $this->assertFalse($protector->isProtected('user_script.php'));
+    }
+
+    public function testSourceProtectorValidatesFiles(): void
+    {
+        $protector = new SourceProtector();
+        
+        $result = $protector->validateFiles([
+            'src/McpServer.php',  // protected
+            'src/Database.php',   // protected
+            'user_file.php',      // not protected
+        ]);
+        
+        $this->assertFalse($result['ok']);
+        $this->assertCount(2, $result['violations']);
+    }
+
+    public function testSourceProtectorBypassCheck(): void
+    {
+        // By default, bypass should not be available
+        $this->assertFalse(SourceProtector::canBypass());
+    }
+
+    // -------------------------------------------------------------------------
+    // SafetyController tests
+    // -------------------------------------------------------------------------
+
+    public function testSafetyControllerModes(): void
+    {
+        $controller = new SafetyController(SafetyController::MODE_NEVER);
+        $this->assertSame(SafetyController::MODE_NEVER, $controller->getMode());
+        $this->assertFalse($controller->isSelfModifyAllowed());
+        $this->assertFalse($controller->isOperationAllowed('modify'));
+        $this->assertTrue($controller->isOperationAllowed('diagnose'));
+
+        $controller = new SafetyController(SafetyController::MODE_ALWAYS);
+        $this->assertTrue($controller->isSelfModifyAllowed());
+        $this->assertTrue($controller->isOperationAllowed('modify'));
+    }
+
+    public function testSafetyControllerValidatesModifications(): void
+    {
+        $controller = new SafetyController(SafetyController::MODE_NEVER);
+        
+        $result = $controller->validateModification([
+            'files' => ['test.php'],
+            'lines' => 10,
+        ]);
+        
+        $this->assertFalse($result['allowed']);
+        $this->assertStringContainsString('disabled', $result['reason']);
+    }
+
+    public function testSafetyControllerStatusReport(): void
+    {
+        $controller = new SafetyController(SafetyController::MODE_REVIEW);
+        $report = $controller->getStatusReport();
+        
+        $this->assertSame(SafetyController::MODE_REVIEW, $report['mode']);
+        $this->assertTrue($report['review_required']);
+        $this->assertArrayHasKey('operations', $report);
+    }
+
+    // -------------------------------------------------------------------------
+    // GepA2AProtocol tests
+    // -------------------------------------------------------------------------
+
+    public function testGepA2AProtocolBuildsMessage(): void
+    {
+        $protocol = new GepA2AProtocol();
+        $message = $protocol->buildMessage('hello', ['test' => true]);
+        
+        $this->assertSame('gep-a2a', $message['protocol']);
+        $this->assertSame('1.0.0', $message['protocol_version']);
+        $this->assertSame('hello', $message['message_type']);
+        $this->assertArrayHasKey('message_id', $message);
+        $this->assertArrayHasKey('sender_id', $message);
+        $this->assertArrayHasKey('timestamp', $message);
+        $this->assertSame(['test' => true], $message['payload']);
+    }
+
+    public function testGepA2AProtocolBuildsHello(): void
+    {
+        $protocol = new GepA2AProtocol();
+        $message = $protocol->buildHello(['geneCount' => 5]);
+        
+        $this->assertSame('hello', $message['message_type']);
+        $this->assertSame(5, $message['payload']['gene_count']);
+        $this->assertArrayHasKey('env_fingerprint', $message['payload']);
+    }
+
+    public function testGepA2AProtocolValidatesMessages(): void
+    {
+        $valid = [
+            'protocol' => 'gep-a2a',
+            'protocol_version' => '1.0.0',
+            'message_type' => 'hello',
+            'message_id' => 'msg_123',
+            'sender_id' => 'node_abc',
+            'timestamp' => '2026-02-25T14:21:20Z',
+            'payload' => [],
+        ];
+        
+        $this->assertTrue(GepA2AProtocol::isValidProtocolMessage($valid));
+        
+        $invalid = $valid;
+        $invalid['protocol'] = 'invalid';
+        $this->assertFalse(GepA2AProtocol::isValidProtocolMessage($invalid));
+    }
+
+    // -------------------------------------------------------------------------
+    // SignalDeduplicator tests
+    // -------------------------------------------------------------------------
+
+    public function testSignalDeduplicatorSuppressesDuplicates(): void
+    {
+        $dedup = new SignalDeduplicator(3600);
+        
+        // First occurrence - should not suppress
+        $result1 = $dedup->shouldSuppress('test_error');
+        $this->assertFalse($result1['suppress']);
+        $this->assertSame(1, $result1['count']);
+        
+        // Second occurrence - should suppress
+        $result2 = $dedup->shouldSuppress('test_error');
+        $this->assertTrue($result2['suppress']);
+        $this->assertSame(2, $result2['count']);
+    }
+
+    public function testSignalDeduplicatorProcessSignal(): void
+    {
+        $dedup = new SignalDeduplicator(3600);
+        
+        $result = $dedup->processSignal('error_in_module', ['file' => 'test.php']);
+        $this->assertSame('notify', $result['action']);
+        
+        // Same signal again
+        $result = $dedup->processSignal('error_in_module', ['file' => 'test.php']);
+        $this->assertSame('suppressed', $result['action']);
     }
 
     // -------------------------------------------------------------------------

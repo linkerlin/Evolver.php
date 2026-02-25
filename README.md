@@ -49,6 +49,8 @@ Add to your MCP client config (e.g. Claude Desktop `claude_desktop_config.json`)
 }
 ```
 
+> **Note**: If `EVOLVER_DB_PATH` is not specified, the default is `~/.evolver/evolver.db`.
+
 ## Available MCP Tools
 
 | Tool | Description |
@@ -152,7 +154,7 @@ composer test
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `EVOLVER_DB_PATH` | `./data/evolver.db` | Path to SQLite database file |
+| `EVOLVER_DB_PATH` | `~/.evolver/evolver.db` | Path to SQLite database file |
 
 ## Security Model
 

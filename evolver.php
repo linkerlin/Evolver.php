@@ -73,8 +73,21 @@ for ($i = 0; $i < count($args); $i++) {
 }
 
 // Determine database path
+// Priority: CLI arg > env var > default (~/.evolver/evolver.db)
 if ($dbPath === null) {
-    $dbPath = getenv('EVOLVER_DB_PATH') ?: (__DIR__ . '/data/evolver.db');
+    $envPath = getenv('EVOLVER_DB_PATH');
+    if ($envPath !== false && $envPath !== '') {
+        $dbPath = $envPath;
+    } else {
+        // Default: ~/.evolver/evolver.db
+        $home = getenv('HOME') ?: getenv('USERPROFILE');
+        if ($home !== false && $home !== '') {
+            $dbPath = $home . '/.evolver/evolver.db';
+        } else {
+            // Fallback to current directory if HOME not available
+            $dbPath = __DIR__ . '/data/evolver.db';
+        }
+    }
 }
 
 // Ensure data directory exists

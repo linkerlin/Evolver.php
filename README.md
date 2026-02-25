@@ -15,6 +15,7 @@ A pure PHP 8.3+ 1:1 port of [EvoMap/evolver](https://github.com/EvoMap/evolver) 
 - **SQLite storage** — WAL mode + mmap for performance, fully local/private
 - **Built-in genes** — 5 default genes seeded on first run (repair, optimize, innovate, SQLite, security)
 - **Safety model** — blast radius limits (60 files/20000 lines), validation command whitelist, forbidden path protection
+- **Auto-initialization** — auto-create directories, database health check, auto-migration
 
 ## Requirements
 
@@ -31,9 +32,11 @@ composer install
 php evolver.php --validate
 ```
 
-## MCP Configuration
+## MCP Client Configuration
 
-Add to your MCP client config (e.g. Claude Desktop `claude_desktop_config.json`):
+### Claude Desktop
+
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
@@ -42,14 +45,61 @@ Add to your MCP client config (e.g. Claude Desktop `claude_desktop_config.json`)
       "command": "php",
       "args": ["/path/to/Evolver.php/evolver.php"],
       "env": {
-        "EVOLVER_DB_PATH": "/path/to/your/evolver.db"
+        "EVOLVER_DB_PATH": "/path/to/your/evolver.db",
+        "EVOLVE_ALLOW_SELF_MODIFY": "review"
       }
     }
   }
 }
 ```
 
-> **Note**: If `EVOLVER_DB_PATH` is not specified, the default is `~/.evolver/evolver.db`.
+### Kimi Code CLI (Recommended)
+
+Edit `~/.kimi/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "evolver": {
+      "command": "php",
+      "args": ["/path/to/Evolver.php/evolver.php"],
+      "env": {
+        "EVOLVER_DB_PATH": "~/.evolver/evolver.db",
+        "EVOLVE_ALLOW_SELF_MODIFY": "review"
+      }
+    }
+  }
+}
+```
+
+> **Note**: Kimi Code CLI has full MCP support and is the recommended client for Evolver.php.
+
+### Gemini CLI
+
+Edit `~/.gemini/config.json`:
+
+```json
+{
+  "mcpServers": {
+    "evolver": {
+      "command": "php",
+      "args": ["/path/to/Evolver.php/evolver.php"],
+      "env": {
+        "EVOLVER_DB_PATH": "~/.evolver/evolver.db",
+        "EVOLVE_ALLOW_SELF_MODIFY": "review"
+      }
+    }
+  }
+}
+```
+
+> **Warning**: Gemini CLI's MCP implementation has known compatibility issues. Kimi Code CLI is recommended instead.
+
+### Default Database Path
+
+If `EVOLVER_DB_PATH` is not specified, the default is `~/.evolver/evolver.db`.
+
+The directory and database file will be auto-created on first run.
 
 ## Available MCP Tools
 
@@ -62,7 +112,11 @@ Add to your MCP client config (e.g. Claude Desktop `claude_desktop_config.json`)
 | `evolver_list_capsules` | List available Capsules |
 | `evolver_list_events` | List recent evolution events |
 | `evolver_upsert_gene` | Create or update a Gene in the store |
+| `evolver_delete_gene` | Delete a Gene from the store |
 | `evolver_stats` | Get store statistics |
+| `evolver_safety_status` | Get current safety status |
+| `evolver_cleanup` | Run cleanup operations |
+| `evolver_sync_to_hub` | Sync assets to EvoMap Hub |
 
 ## Usage Examples
 
@@ -112,6 +166,16 @@ Add to your MCP client config (e.g. Claude Desktop `claude_desktop_config.json`)
 | `harden` | Focus on stability, security, and robustness |
 | `repair-only` | Emergency mode — only fix errors, no innovation |
 
+## Safety Modes
+
+Set via `EVOLVE_ALLOW_SELF_MODIFY` environment variable:
+
+| Mode | Description |
+|------|-------------|
+| `never` | Completely disable self-modification, diagnostics only |
+| `review` | All modifications require human confirmation (recommended) |
+| `always` | Full automation (use with caution) |
+
 ## GEP Protocol Output
 
 When `evolver_run` generates a prompt, the LLM must output exactly 5 JSON objects (raw, no markdown):
@@ -141,6 +205,7 @@ When `evolver_run` generates a prompt, the LLM must output exactly 5 JSON object
 │  Storage Layer                           │
 │  - GepAssetStore (genes/capsules/events) │
 │  - Database (SQLite WAL + mmap)          │
+│  - Auto-migration & health check         │
 └─────────────────────────────────────────┘
 ```
 
@@ -155,6 +220,9 @@ composer test
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `EVOLVER_DB_PATH` | `~/.evolver/evolver.db` | Path to SQLite database file |
+| `EVOLVE_ALLOW_SELF_MODIFY` | `always` | Safety mode: never/review/always |
+| `A2A_HUB_URL` | - | EvoMap Hub URL for sync |
+| `A2A_NODE_SECRET` | - | Node secret for authentication |
 
 ## Security Model
 
@@ -162,8 +230,8 @@ composer test
 - **No shell operators**: `;`, `&&`, `||`, `|`, `>`, `<`, `` ` ``, `$()` rejected
 - **Blast radius limits**: Hard limits of 60 files and 20,000 lines per evolution
 - **Gene constraint enforcement**: Each gene specifies its own `max_files` and `forbidden_paths`
+- **Source protection**: Core engine files are protected from self-modification
 
 ## License
 
 MIT
-

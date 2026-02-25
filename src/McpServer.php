@@ -159,8 +159,9 @@ final class McpServer
     {
         $this->initialized = true;
 
-        // Send initialized notification
-        $this->sendNotification('notifications/initialized', new \stdClass());
+        // Note: We don't send 'notifications/initialized' here because some MCP clients
+        // (like Kimi CLI) have validation issues with this notification.
+        // The client can infer initialization completion from the initialize response.
 
         return [
             'protocolVersion' => self::MCP_VERSION,

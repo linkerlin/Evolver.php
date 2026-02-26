@@ -1,29 +1,29 @@
 # Evolver.php
 
-🧬 Capability Evolver 的PHP实现版本，支持MCP服务，部署简单，数据私有化。
+🧬 Capability Evolver 的 PHP 实现版本，支持 MCP 服务，部署简单，数据私有化。
 
 A pure PHP 8.3+ 1:1 port of [EvoMap/evolver](https://github.com/EvoMap/evolver) as a stdio MCP server with local SQLite storage (WAL + mmap).
 
 ---
 
-## Features
+## 核心特性
 
-- **MCP stdio server** — JSON-RPC 2.0 over stdin/stdout, zero platform dependency
-- **GEP Protocol** — standardized evolution with 5 mandatory objects (Mutation → PersonalityState → EvolutionEvent → Gene → Capsule)
-- **Signal-driven** — extracts signals from logs/context, suppresses duplicates, detects repair loops
-- **Gene/Capsule dual-track** — Genes = reusable strategy templates, Capsules = successful result snapshots
-- **SQLite storage** — WAL mode + mmap for performance, fully local/private
-- **Built-in genes** — 5 default genes seeded on first run (repair, optimize, innovate, SQLite, security)
-- **Safety model** — blast radius limits (60 files/20000 lines), validation command whitelist, forbidden path protection
-- **Auto-initialization** — auto-create directories, database health check, auto-migration
+- **MCP stdio 服务器** — JSON-RPC 2.0 协议通过 stdin/stdout 通信，零平台依赖
+- **GEP 协议** — 标准化的演化流程，包含 5 个必需对象（Mutation → PersonalityState → EvolutionEvent → Gene → Capsule）
+- **信号驱动** — 从日志/上下文提取信号，去除重复，检测修复循环
+- **Gene/Capsule 双轨制** — Genes = 可复用策略模板，Capsules = 成功结果快照
+- **SQLite 存储** — WAL 模式 + mmap 优化，完全本地化/私有化
+- **内置 Genes** — 首次运行自动初始化 5 个默认 genes（repair、optimize、innovate、SQLite、security）
+- **安全模型** — 爆炸半径限制（60 文件/20000 行）、验证命令白名单、禁止路径保护
+- **自动初始化** — 自动创建目录、数据库健康检查、自动迁移
 
-## Requirements
+## 环境要求
 
 - PHP 8.3+
-- `sqlite3` PHP extension (enabled by default)
-- `pdo_sqlite` PHP extension (enabled by default)
+- `sqlite3` PHP 扩展（默认已启用）
+- `pdo_sqlite` PHP 扩展（默认已启用）
 
-## Installation
+## 安装
 
 ```bash
 git clone https://github.com/linkerlin/Evolver.php.git
@@ -32,11 +32,11 @@ composer install
 php evolver.php --validate
 ```
 
-## MCP Client Configuration
+## MCP 客户端配置
 
 ### Claude Desktop
 
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+编辑 `~/Library/Application Support/Claude/claude_desktop_config.json`（macOS）或 `%APPDATA%\Claude\claude_desktop_config.json`（Windows）：
 
 ```json
 {
@@ -53,9 +53,9 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) o
 }
 ```
 
-### Kimi Code CLI (Recommended)
+### Kimi Code CLI（推荐）
 
-Edit `~/.kimi/mcp.json`:
+编辑 `~/.kimi/mcp.json`：
 
 ```json
 {
@@ -72,11 +72,11 @@ Edit `~/.kimi/mcp.json`:
 }
 ```
 
-> **Note**: Kimi Code CLI has full MCP support and is the recommended client for Evolver.php.
+> **注意**：Kimi Code CLI 完整支持 MCP，是 Evolver.php 的推荐客户端。
 
 ### Gemini CLI
 
-Edit `~/.gemini/config.json`:
+编辑 `~/.gemini/config.json`：
 
 ```json
 {
@@ -93,34 +93,34 @@ Edit `~/.gemini/config.json`:
 }
 ```
 
-> **Warning**: Gemini CLI's MCP implementation has known compatibility issues. Kimi Code CLI is recommended instead.
+> **警告**：Gemini CLI 的 MCP 实现存在已知兼容性问题。建议使用 Kimi Code CLI。
 
-### Default Database Path
+### 默认数据库路径
 
-If `EVOLVER_DB_PATH` is not specified, the default is `~/.evolver/evolver.db`.
+如果未指定 `EVOLVER_DB_PATH`，默认值为 `~/.evolver/evolver.db`。
 
-The directory and database file will be auto-created on first run.
+首次运行时会自动创建目录和数据库文件。
 
-## Available MCP Tools
+## 可用 MCP 工具
 
-| Tool | Description |
-|------|-------------|
-| `evolver_run` | Run an evolution cycle: extract signals, select Gene/Capsule, generate GEP prompt |
-| `evolver_solidify` | Solidify result: validate, record EvolutionEvent, update Gene, store Capsule |
-| `evolver_extract_signals` | Extract evolution signals from log content |
-| `evolver_list_genes` | List available Genes (filterable by category) |
-| `evolver_list_capsules` | List available Capsules |
-| `evolver_list_events` | List recent evolution events |
-| `evolver_upsert_gene` | Create or update a Gene in the store |
-| `evolver_delete_gene` | Delete a Gene from the store |
-| `evolver_stats` | Get store statistics |
-| `evolver_safety_status` | Get current safety status |
-| `evolver_cleanup` | Run cleanup operations |
-| `evolver_sync_to_hub` | Sync assets to EvoMap Hub |
+| 工具 | 说明 |
+|------|------|
+| `evolver_run` | 运行演化周期：提取信号、选择 Gene/Capsule、生成 GEP 提示 |
+| `evolver_solidify` | 固化结果：验证、记录 EvolutionEvent、更新 Gene、存储 Capsule |
+| `evolver_extract_signals` | 从日志内容提取演化信号 |
+| `evolver_list_genes` | 列出可用 Genes（支持按分类筛选）|
+| `evolver_list_capsules` | 列出可用 Capsules |
+| `evolver_list_events` | 查看最近演化事件 |
+| `evolver_upsert_gene` | 创建或更新 Gene |
+| `evolver_delete_gene` | 删除 Gene |
+| `evolver_stats` | 获取存储统计信息 |
+| `evolver_safety_status` | 获取当前安全状态 |
+| `evolver_cleanup` | 执行清理操作 |
+| `evolver_sync_to_hub` | 同步资产到 EvoMap Hub |
 
-## Usage Examples
+## 使用示例
 
-### Run an evolution cycle
+### 运行演化周期
 
 ```json
 {
@@ -132,7 +132,7 @@ The directory and database file will be auto-created on first run.
 }
 ```
 
-### Solidify after applying changes
+### 应用更改后固化结果
 
 ```json
 {
@@ -146,7 +146,7 @@ The directory and database file will be auto-created on first run.
 }
 ```
 
-### Extract signals from logs
+### 从日志提取信号
 
 ```json
 {
@@ -157,36 +157,36 @@ The directory and database file will be auto-created on first run.
 }
 ```
 
-## Strategy Presets
+## 策略预设
 
-| Strategy | Description |
-|----------|-------------|
-| `balanced` | Default — handle errors and opportunities proportionally |
-| `innovate` | Maximize new features and capability expansion |
-| `harden` | Focus on stability, security, and robustness |
-| `repair-only` | Emergency mode — only fix errors, no innovation |
+| 策略 | 说明 |
+|------|------|
+| `balanced` | 默认 — 按比例处理错误和机会 |
+| `innovate` | 最大化新功能和能力扩展 |
+| `harden` | 聚焦稳定性、安全性和鲁棒性 |
+| `repair-only` | 紧急模式 — 仅修复错误，无创新 |
 
-## Safety Modes
+## 安全模式
 
-Set via `EVOLVE_ALLOW_SELF_MODIFY` environment variable:
+通过 `EVOLVE_ALLOW_SELF_MODIFY` 环境变量设置：
 
-| Mode | Description |
-|------|-------------|
-| `never` | Completely disable self-modification, diagnostics only |
-| `review` | All modifications require human confirmation (recommended) |
-| `always` | Full automation (use with caution) |
+| 模式 | 说明 |
+|------|------|
+| `never` | 完全禁用自修改，仅诊断 |
+| `review` | 所有修改需要人工确认（推荐）|
+| `always` | 完全自动化（谨慎使用）|
 
-## GEP Protocol Output
+## GEP 协议输出
 
-When `evolver_run` generates a prompt, the LLM must output exactly 5 JSON objects (raw, no markdown):
+当 `evolver_run` 生成 GEP 提示时，LLM 必须按顺序输出恰好 5 个 JSON 对象（原始格式，无 markdown）：
 
-1. **Mutation** — the change trigger with risk level and rationale
-2. **PersonalityState** — evolution mood (rigor, creativity, verbosity, risk_tolerance, obedience)
-3. **EvolutionEvent** — auditable record with parent chain, signals, blast radius
-4. **Gene** — reusable strategy template (create new or update existing)
-5. **Capsule** — success snapshot for future reuse
+1. **Mutation** — 变更触发器，包含风险等级和理由
+2. **PersonalityState** — 演化心态（rigor、creativity、verbosity、risk_tolerance、obedience）
+3. **EvolutionEvent** — 可审计记录，包含父链、信号、爆炸半径
+4. **Gene** — 可复用策略模板（创建新的或更新现有的）
+5. **Capsule** — 成功快照，供未来复用
 
-## Architecture
+## 架构
 
 ```
 ┌─────────────────────────────────────────┐
@@ -209,29 +209,29 @@ When `evolver_run` generates a prompt, the LLM must output exactly 5 JSON object
 └─────────────────────────────────────────┘
 ```
 
-## Running Tests
+## 运行测试
 
 ```bash
 composer test
 ```
 
-## Environment Variables
+## 环境变量
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `EVOLVER_DB_PATH` | `~/.evolver/evolver.db` | Path to SQLite database file |
-| `EVOLVE_ALLOW_SELF_MODIFY` | `always` | Safety mode: never/review/always |
-| `A2A_HUB_URL` | - | EvoMap Hub URL for sync |
-| `A2A_NODE_SECRET` | - | Node secret for authentication |
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `EVOLVER_DB_PATH` | `~/.evolver/evolver.db` | SQLite 数据库文件路径 |
+| `EVOLVE_ALLOW_SELF_MODIFY` | `always` | 安全模式：never/review/always |
+| `A2A_HUB_URL` | - | EvoMap Hub 同步地址 |
+| `A2A_NODE_SECRET` | - | 节点认证密钥 |
 
-## Security Model
+## 安全模型
 
-- **Validation command whitelist**: Only `php`, `composer`, `phpunit`, `phpcs`, `phpstan` commands allowed
-- **No shell operators**: `;`, `&&`, `||`, `|`, `>`, `<`, `` ` ``, `$()` rejected
-- **Blast radius limits**: Hard limits of 60 files and 20,000 lines per evolution
-- **Gene constraint enforcement**: Each gene specifies its own `max_files` and `forbidden_paths`
-- **Source protection**: Core engine files are protected from self-modification
+- **验证命令白名单**：仅允许 `php`、`composer`、`phpunit`、`phpcs`、`phpstan` 命令
+- **禁止 shell 操作符**：`;`、`&&`、`||`、`|`、`>`、`<`、`$()` 都会被拒绝
+- **爆炸半径限制**：每次演化的硬限制为 60 个文件和 20,000 行
+- **Gene 约束强制执行**：每个 gene 指定自己的 `max_files` 和 `forbidden_paths`
+- **源文件保护**：核心引擎文件受保护，防止自修改
 
-## License
+## 许可证
 
 MIT

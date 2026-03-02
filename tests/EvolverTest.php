@@ -2045,4 +2045,307 @@ class EvolverTest extends TestCase
         
         $this->assertTrue(true);
     }
+
+    // -------------------------------------------------------------------------
+    // EvoMapClient extended tests
+    // -------------------------------------------------------------------------
+
+    public function testEvoMapClientGetLastError(): void
+    {
+        $client = new \Evolver\EvoMapClient();
+        
+        $error = $client->getLastError();
+        $this->assertNull($error);
+    }
+
+    public function testEvoMapClientPublishAsset(): void
+    {
+        $client = new \Evolver\EvoMapClient();
+        
+        $result = $client->publishAsset(['type' => 'Gene', 'id' => 'gene_test', 'content' => 'test']);
+        
+        $this->assertIsArray($result);
+    }
+
+    public function testEvoMapClientPublishBundle(): void
+    {
+        $client = new \Evolver\EvoMapClient();
+        
+        $gene = ['type' => 'Gene', 'id' => 'gene1', 'content' => 'test gene'];
+        $capsule = ['type' => 'Capsule', 'id' => 'capsule1', 'content' => 'test capsule'];
+        
+        $result = $client->publishBundle($gene, $capsule);
+        
+        $this->assertIsArray($result);
+    }
+
+    public function testEvoMapClientReportValidation(): void
+    {
+        $client = new \Evolver\EvoMapClient();
+        
+        $result = $client->reportValidation('test_asset_id', ['valid' => true]);
+        
+        $this->assertIsArray($result);
+    }
+
+    public function testEvoMapClientSendDecision(): void
+    {
+        $client = new \Evolver\EvoMapClient();
+        
+        $result = $client->sendDecision('accept', 'test_asset_id', 'Looks good');
+        
+        $this->assertIsArray($result);
+    }
+
+    public function testEvoMapClientStartHeartbeatTracking(): void
+    {
+        $client = new \Evolver\EvoMapClient();
+        
+        $client->startHeartbeatTracking();
+        
+        $stats = $client->getHeartbeatStats();
+        $this->assertTrue($stats['running']);
+    }
+
+    // -------------------------------------------------------------------------
+    // EvolutionLoop extended tests
+    // -------------------------------------------------------------------------
+
+    public function testEvolutionLoopStop(): void
+    {
+        $loop = new \Evolver\EvolutionLoop($this->db, 60);
+        
+        $loop->stop();
+        
+        $this->assertFalse($loop->isRunning());
+    }
+
+    public function testEvolutionLoopHandleSignal(): void
+    {
+        $loop = new \Evolver\EvolutionLoop($this->db, 60);
+        
+        $loop->handleSignal(SIGTERM);
+        
+        $this->assertFalse($loop->isRunning());
+    }
+
+    // -------------------------------------------------------------------------
+    // PromptBuilder extended tests
+    // -------------------------------------------------------------------------
+
+    public function testPromptBuilderBuildReusePrompt(): void
+    {
+        $builder = new \Evolver\PromptBuilder();
+        
+        $prompt = $builder->buildReusePrompt([
+            'context' => 'error context',
+            'signals' => ['error'],
+            'gene' => ['id' => 'gene1'],
+            'capsule' => ['id' => 'capsule1'],
+        ]);
+        
+        $this->assertIsString($prompt);
+    }
+
+    public function testPromptBuilderFormatGenesPreview(): void
+    {
+        $builder = new \Evolver\PromptBuilder();
+        
+        $genes = [
+            ['id' => 'gene1', 'category' => 'repair'],
+            ['id' => 'gene2', 'category' => 'optimize'],
+        ];
+        
+        $preview = $builder->formatGenesPreview($genes);
+        
+        $this->assertIsString($preview);
+    }
+
+    public function testPromptBuilderFormatCapsulesPreview(): void
+    {
+        $builder = new \Evolver\PromptBuilder();
+        
+        $capsules = [
+            ['id' => 'capsule1', 'summary' => 'Fixed error'],
+        ];
+        
+        $preview = $builder->formatCapsulesPreview($capsules);
+        
+        $this->assertIsString($preview);
+    }
+
+    // -------------------------------------------------------------------------
+    // SolidifyEngine extended tests
+    // -------------------------------------------------------------------------
+
+    public function testSolidifyEngineWithHighGdiCapsule(): void
+    {
+        $gene = [
+            'id' => 'gene_test_high_gdi',
+            'type' => 'Gene',
+            'category' => 'repair',
+            'signals_match' => ['error'],
+            'constraints' => ['max_files' => 10],
+        ];
+        
+        $result = $this->solidifyEngine->solidify([
+            'intent' => 'repair',
+            'summary' => 'Fixed with high GDI capsule',
+            'signals' => ['error'],
+            'gene' => $gene,
+            'blastRadius' => ['files' => 1, 'lines' => 5],
+        ]);
+        
+        $this->assertTrue($result['ok']);
+    }
+
+    // -------------------------------------------------------------------------
+    // SignalExtractor extended tests
+    // -------------------------------------------------------------------------
+
+    public function testSignalExtractorExtractEmptyContext(): void
+    {
+        $extractor = new \Evolver\SignalExtractor();
+        
+        $signals = $extractor->extract([]);
+        
+        $this->assertIsArray($signals);
+    }
+
+    public function testSignalExtractorExtractWithMultipleErrors(): void
+    {
+        $extractor = new \Evolver\SignalExtractor();
+        
+        $signals = $extractor->extract([
+            'context' => '[ERROR] Error 1 [ERROR] Error 2 [WARN] Warning',
+        ]);
+        
+        $this->assertNotEmpty($signals);
+    }
+
+    // -------------------------------------------------------------------------
+    // ContentHash extended tests
+    // -------------------------------------------------------------------------
+
+    public function testContentHashVerifyAssetIdMismatch(): void
+    {
+        $data = ['test' => 'data'];
+        $assetId = \Evolver\ContentHash::computeAssetId($data);
+        
+        $result = \Evolver\ContentHash::verifyAssetId($data, 'different_id');
+        
+        $this->assertFalse($result);
+    }
+
+    // -------------------------------------------------------------------------
+    // Database extended tests
+    // -------------------------------------------------------------------------
+
+    public function testDatabaseWithInvalidQuery(): void
+    {
+        $this->expectException(\SQLite3Exception::class);
+        
+        $this->db->query('INVALID SQL');
+    }
+
+    public function testDatabaseFetchAllWithParams(): void
+    {
+        $this->db->exec('CREATE TABLE IF NOT EXISTS test_params (id INTEGER, name TEXT)');
+        $this->db->exec('INSERT INTO test_params (id, name) VALUES (?, ?)', [1, 'test']);
+        
+        $results = $this->db->fetchAll('SELECT * FROM test_params WHERE id = ?', [1]);
+        
+        $this->assertCount(1, $results);
+    }
+
+    public function testDatabaseFetchOneNoResults(): void
+    {
+        $result = $this->db->fetchOne('SELECT * FROM genes WHERE id = ?', ['nonexistent']);
+        
+        $this->assertNull($result);
+    }
+
+    // -------------------------------------------------------------------------
+    // GepValidator extended tests
+    // -------------------------------------------------------------------------
+
+    public function testGepValidatorInvalidMutation(): void
+    {
+        $validator = new \Evolver\GepValidator();
+        
+        $mutation = [
+            'type' => 'Mutation',
+        ];
+        
+        $result = $validator->validateMutation($mutation);
+        
+        $this->assertFalse($result['valid']);
+    }
+
+    public function testGepValidatorInvalidGene(): void
+    {
+        $validator = new \Evolver\GepValidator();
+        
+        $gene = [
+            'type' => 'Gene',
+        ];
+        
+        $result = $validator->validateGene($gene);
+        
+        $this->assertFalse($result['valid']);
+    }
+
+    // -------------------------------------------------------------------------
+    // StrategyConfig extended tests
+    // -------------------------------------------------------------------------
+
+    public function testStrategyConfigSetInvalidStrategy(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        
+        $config = new \Evolver\StrategyConfig();
+        
+        $config->setStrategy('invalid_strategy');
+    }
+
+    public function testStrategyConfigFailsQualityGates(): void
+    {
+        $config = new \Evolver\StrategyConfig();
+        
+        $mutation = [
+            'confidence' => 0.1,
+            'gdi' => 0.1,
+        ];
+        
+        $result = $config->passesQualityGates($mutation);
+        
+        $this->assertFalse($result['passed']);
+    }
+
+    // -------------------------------------------------------------------------
+    // GdiCalculator extended tests
+    // -------------------------------------------------------------------------
+
+    public function testGdiCalculatorEmptyCapsule(): void
+    {
+        $calculator = new \Evolver\GdiCalculator();
+        
+        $score = $calculator->computeCapsuleGdi([]);
+        
+        $this->assertGreaterThanOrEqual(0, $score);
+    }
+
+    public function testGdiCalculatorWithLowScore(): void
+    {
+        $calculator = new \Evolver\GdiCalculator();
+        
+        $capsule = [
+            'outcome' => ['score' => 0.1],
+            'confidence' => 0.1,
+        ];
+        
+        $score = $calculator->computeCapsuleGdi($capsule);
+        
+        $this->assertLessThan(0.3, $score);
+    }
 }

@@ -269,6 +269,66 @@ final class GepAssetStore
     }
 
     /**
+     * Load capsules sorted by GDI score.
+     */
+    public function loadCapsulesByGdi(int $limit = 100, bool $descending = true): array
+    {
+        $rows = $this->db->fetchAll(
+            'SELECT data FROM capsules ORDER BY created_at DESC LIMIT ?',
+            [$limit * 2]
+        );
+        $capsules = [];
+        foreach ($rows as $row) {
+            $capsule = json_decode($row['data'], true);
+            if (is_array($capsule)) {
+                $capsules[] = $capsule;
+            }
+        }
+
+        $gdiCalculator = new GdiCalculator();
+        return $gdiCalculator->sortCapsulesByGdi($capsules, $descending);
+    }
+
+    /**
+     * Load top capsules by GDI score.
+     */
+    public function loadTopCapsules(int $limit = 10): array
+    {
+        return $this->loadCapsulesByGdi($limit, true);
+    }
+
+    /**
+     * Load capsules filtered by minimum GDI score.
+     */
+    public function loadCapsulesByMinGdi(float $minGdi, int $limit = 100): array
+    {
+        $rows = $this->db->fetchAll(
+            'SELECT data FROM capsules ORDER BY created_at DESC LIMIT ?',
+            [$limit * 2]
+        );
+        $capsules = [];
+        foreach ($rows as $row) {
+            $capsule = json_decode($row['data'], true);
+            if (is_array($capsule)) {
+                $capsules[] = $capsule;
+            }
+        }
+
+        $gdiCalculator = new GdiCalculator();
+        return $gdiCalculator->filterCapsulesByMinGdi($capsules, $minGdi);
+    }
+
+    /**
+     * Get GDI statistics for all capsules.
+     */
+    public function getCapsulesGdiStats(): array
+    {
+        $capsules = $this->loadCapsules(1000);
+        $gdiCalculator = new GdiCalculator();
+        return $gdiCalculator->getGdiStats($capsules);
+    }
+
+    /**
      * Compute success streak for a gene based on historical capsules.
      */
     public function computeSuccessStreak(string $geneId, array $signals = []): int

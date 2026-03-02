@@ -13,6 +13,18 @@ declare(strict_types=1);
  *   php evolver.php                    # Start MCP stdio server
  *   php evolver.php --validate         # Validate installation
  *   php evolver.php --db /path/to.db   # Use custom database path
+ *   php evolver.php --ops <command>    # Run ops commands
+ *   php evolver.php --review           # Start in review mode (require human approval)
+ *   php evolver.php --loop [interval]  # Start in continuous loop mode (seconds between cycles)
+ *   php evolver.php --validate-gep     # Validate GEP protocol output
+ *
+ * Ops commands:
+ *   cleanup    - Clean old logs, temp files
+ *   health     - Check system health
+ *   stats      - Display statistics
+ *   gc         - Garbage collect old data
+ *   dedupe     - Show signal deduplication stats
+ *   help       - Show ops help
  *
  * MCP clients connect via stdio (JSON-RPC 2.0).
  */
@@ -58,17 +70,57 @@ if (!$autoloaded) {
 
 use Evolver\Database;
 use Evolver\McpServer;
+use Evolver\EvolutionLoop;
+use Evolver\Ops\OpsManager;
 
 // Parse CLI arguments
 $args = array_slice($argv ?? [], 1);
 $dbPath = null;
 $validate = false;
+$opsCommand = null;
+$opsOpts = [];
+$reviewMode = false;
+$loopMode = false;
+$loopInterval = 60;
+$validateGep = false;
 
 for ($i = 0; $i < count($args); $i++) {
     if ($args[$i] === '--db' && isset($args[$i + 1])) {
         $dbPath = $args[++$i];
     } elseif ($args[$i] === '--validate') {
         $validate = true;
+    } elseif ($args[$i] === '--validate-gep') {
+        $validateGep = true;
+    } elseif ($args[$i] === '--review') {
+        $reviewMode = true;
+    } elseif ($args[$i] === '--loop') {
+        $loopMode = true;
+        // Check for optional interval parameter
+        if (isset($args[$i + 1]) && is_numeric($args[$i + 1])) {
+            $loopInterval = (int)$args[++$i];
+        }
+    } elseif ($args[$i] === '--ops' && isset($args[$i + 1])) {
+        $opsCommand = $args[++$i];
+        // Collect remaining args as options
+        while ($i + 1 < count($args) && !str_starts_with($args[$i + 1], '--')) {
+            $opt = $args[++$i];
+            if (str_contains($opt, '=')) {
+                [$key, $value] = explode('=', $opt, 2);
+                $opsOpts[$key] = $value;
+            } else {
+                $opsOpts[$opt] = true;
+            }
+        }
+        // Handle --key=value format
+        while ($i + 1 < count($args) && str_starts_with($args[$i + 1], '--')) {
+            $opt = ltrim($args[++$i], '-');
+            if (str_contains($opt, '=')) {
+                [$key, $value] = explode('=', $opt, 2);
+                $opsOpts[$key] = $value;
+            } else {
+                $opsOpts[$opt] = true;
+            }
+        }
     }
 }
 
@@ -131,11 +183,58 @@ if ($validate) {
     }
 }
 
-// Start MCP server
+if ($validateGep) {
+    // GEP validation mode: read from stdin and validate
+    echo "Enter GEP output (5 JSON objects, Ctrl+D to finish):\n";
+    $input = '';
+    while (!feof(STDIN)) {
+        $input .= fgets(STDIN);
+    }
+
+    if (empty(trim($input))) {
+        echo "❌ No input provided\n";
+        exit(1);
+    }
+
+    try {
+        $validator = new \Evolver\GepValidator();
+        $result = $validator->validateGepOutput($input);
+        echo "\n" . $validator->getSummary($result) . "\n";
+        exit($result['valid'] ? 0 : 1);
+    } catch (\Throwable $e) {
+        echo "❌ Validation error: " . $e->getMessage() . "\n";
+        exit(1);
+    }
+}
+
+if ($opsCommand !== null) {
+    // Ops mode: run运维 commands
+    try {
+        $opsManager = new OpsManager(dirname($dbPath), null);
+        $result = $opsManager->run($opsCommand, $opsOpts);
+        echo OpsManager::formatOutput($result) . "\n";
+        exit($result['ok'] ? 0 : 1);
+    } catch (\Throwable $e) {
+        echo "❌ Ops failed: " . $e->getMessage() . "\n";
+        exit(1);
+    }
+}
+
+// Start MCP server or loop mode
 try {
     $db = new Database($dbPath);
-    $server = new McpServer($db);
-    $server->run();
+
+    if ($loopMode) {
+        // Start evolution loop mode
+        $loop = new EvolutionLoop($db, $loopInterval);
+        echo "Starting evolution loop (interval: {$loopInterval}s)...\n";
+        echo "Press Ctrl+C to stop.\n";
+        $loop->run();
+    } else {
+        // Start standard MCP server
+        $server = new McpServer($db, $reviewMode);
+        $server->run();
+    }
 } catch (\Throwable $e) {
     error_log('[Evolver.php] Fatal error: ' . $e->getMessage());
     exit(1);

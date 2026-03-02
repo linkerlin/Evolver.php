@@ -37,8 +37,9 @@ final class McpServer
     private $stdout;
 
     private bool $initialized = false;
+    private bool $reviewMode = false;
 
-    public function __construct(private readonly Database $db)
+    public function __construct(private readonly Database $db, bool $reviewMode = false)
     {
         $this->store = new GepAssetStore($db);
         $this->signalExtractor = new SignalExtractor();
@@ -49,6 +50,13 @@ final class McpServer
         // Initialize safety and protection
         $this->sourceProtector = new SourceProtector();
         $this->safetyController = SafetyController::fromEnvironment($this->sourceProtector);
+        
+        // Apply review mode if specified
+        $this->reviewMode = $reviewMode;
+        if ($reviewMode) {
+            // Force review mode in safety controller
+            $this->safetyController = new SafetyController('review', $this->sourceProtector);
+        }
         
         // Initialize optional components
         $this->evoMapClient = new EvoMapClient();
@@ -61,6 +69,14 @@ final class McpServer
 
         // Register lifecycle handlers
         $this->registerLifecycleHandlers();
+    }
+
+    /**
+     * Check if running in review mode.
+     */
+    public function isReviewMode(): bool
+    {
+        return $this->reviewMode;
     }
 
     /**
@@ -402,6 +418,28 @@ final class McpServer
 
     private function toolEvolverSolidify(array $args): array
     {
+        // Check if running in review mode - require human approval
+        if ($this->reviewMode) {
+            $blastRadius = $args['blastRadius'] ?? ['files' => 0, 'lines' => 0];
+            $files = $args['modifiedFiles'] ?? [];
+            
+            return [
+                'ok' => true,
+                'requires_review' => true,
+                'review_type' => 'solidification',
+                'message' => 'Review mode: human approval required before solidifying evolution result',
+                'proposed_changes' => [
+                    'intent' => $args['intent'] ?? 'repair',
+                    'summary' => $args['summary'] ?? '',
+                    'signals' => $args['signals'] ?? [],
+                    'blast_radius' => $blastRadius,
+                    'modified_files' => $files,
+                ],
+                'safety_status' => $this->safetyController->getStatusReport(),
+                'instructions' => 'To approve, call evolver_solidify again with approved=true. To reject, call with approved=false.',
+            ];
+        }
+
         // Check safety mode for modifications
         $blastRadius = $args['blastRadius'] ?? ['files' => 0, 'lines' => 0];
         $files = $args['modifiedFiles'] ?? [];
@@ -432,6 +470,18 @@ final class McpServer
         $personalityState = $args['personalityState'] ?? null;
         $dryRun = (bool)($args['dryRun'] ?? false);
         $gepOutput = $args['gepOutput'] ?? null;
+
+        // Handle approval/rejection in review mode
+        if ($this->reviewMode && isset($args['approved'])) {
+            if ($args['approved'] === false) {
+                return [
+                    'ok' => true,
+                    'review_result' => 'rejected',
+                    'message' => 'Evolution result has been rejected by human',
+                ];
+            }
+            // If approved=true, continue with normal solidify flow
+        }
 
         // If gepOutput is provided, parse it to extract GEP objects
         if ($gepOutput !== null) {

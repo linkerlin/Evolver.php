@@ -1653,4 +1653,396 @@ class EvolverTest extends TestCase
         $this->assertArrayHasKey('cycles_completed', $stats);
         $this->assertArrayHasKey('cycles_failed', $stats);
     }
+
+    // -------------------------------------------------------------------------
+    // Database extended tests
+    // -------------------------------------------------------------------------
+
+    public function testDatabaseQuery(): void
+    {
+        $result = $this->db->query('SELECT 1 as test');
+        $this->assertNotFalse($result);
+    }
+
+    public function testDatabaseExec(): void
+    {
+        $result = $this->db->exec('CREATE TABLE IF NOT EXISTS test_table (id INTEGER)');
+        $this->assertTrue($result);
+    }
+
+    public function testDatabaseFetchOne(): void
+    {
+        $this->db->exec('CREATE TABLE IF NOT EXISTS test_fetchone (id INTEGER PRIMARY KEY, name TEXT)');
+        $this->db->exec('INSERT INTO test_fetchone (name) VALUES (?)', ['test']);
+        
+        $result = $this->db->fetchOne('SELECT * FROM test_fetchone WHERE name = ?', ['test']);
+        $this->assertNotNull($result);
+        $this->assertSame('test', $result['name']);
+    }
+
+    public function testDatabaseLastInsertRowId(): void
+    {
+        $this->db->exec('CREATE TABLE IF NOT EXISTS test_insert (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)');
+        $this->db->exec('INSERT INTO test_insert (name) VALUES (?)', ['test']);
+        
+        $rowId = $this->db->lastInsertRowId();
+        $this->assertGreaterThan(0, $rowId);
+    }
+
+    public function testDatabaseGetMigrationLog(): void
+    {
+        $log = $this->db->getMigrationLog();
+        $this->assertIsArray($log);
+    }
+
+    public function testDatabaseGetHealthStatus(): void
+    {
+        $health = $this->db->getHealthStatus();
+        $this->assertArrayHasKey('path', $health);
+    }
+
+    public function testDatabaseGetDb(): void
+    {
+        $db = $this->db->getDb();
+        $this->assertInstanceOf(\SQLite3::class, $db);
+    }
+
+    public function testDatabaseClose(): void
+    {
+        $testDb = new \Evolver\Database(':memory:');
+        $testDb->close();
+        $this->assertTrue(true);
+    }
+
+    // -------------------------------------------------------------------------
+    // StructuredLogger tests
+    // -------------------------------------------------------------------------
+
+    public function testStructuredLoggerBasic(): void
+    {
+        $logger = new \Evolver\Ops\StructuredLogger('/tmp/test_evolver.log');
+        
+        $logger->info('test message', ['key' => 'value']);
+        
+        $this->assertFileExists('/tmp/test_evolver.log');
+    }
+
+    public function testStructuredLoggerGetLogFiles(): void
+    {
+        $logger = new \Evolver\Ops\StructuredLogger('/tmp/test_evolver2.log');
+        
+        $files = $logger->getLogFiles();
+        
+        $this->assertIsArray($files);
+    }
+
+    public function testStructuredLoggerGetLogSize(): void
+    {
+        $logger = new \Evolver\Ops\StructuredLogger('/tmp/test_evolver3.log');
+        
+        $size = $logger->getLogSize();
+        
+        $this->assertIsArray($size);
+    }
+
+    // -------------------------------------------------------------------------
+    // GitSelfRepair tests
+    // -------------------------------------------------------------------------
+
+    public function testGitSelfRepairBasic(): void
+    {
+        $repair = new \Evolver\Ops\GitSelfRepair();
+        
+        $this->assertTrue(true);
+    }
+
+    public function testGitSelfRepairRepair(): void
+    {
+        $repair = new \Evolver\Ops\GitSelfRepair();
+        
+        $result = $repair->repair();
+        
+        $this->assertArrayHasKey('ok', $result);
+    }
+
+    public function testGitSelfRepairGetLastResult(): void
+    {
+        $repair = new \Evolver\Ops\GitSelfRepair();
+        
+        $repair->repair();
+        
+        $result = $repair->getLastResult();
+        $this->assertIsArray($result);
+    }
+
+    // -------------------------------------------------------------------------
+    // DaemonManager tests
+    // -------------------------------------------------------------------------
+
+    public function testDaemonManagerBasic(): void
+    {
+        $manager = new \Evolver\Ops\DaemonManager();
+        
+        $this->assertFalse($manager->isRunning());
+    }
+
+    public function testDaemonManagerGetPid(): void
+    {
+        $manager = new \Evolver\Ops\DaemonManager();
+        
+        $pid = $manager->getPid();
+        
+        $this->assertNull($pid);
+    }
+
+    // -------------------------------------------------------------------------
+    // SignalExtractor extended tests
+    // -------------------------------------------------------------------------
+
+    public function testSignalExtractorMultipleSignals(): void
+    {
+        $extractor = new \Evolver\SignalExtractor();
+        
+        $signals = $extractor->extract([
+            'context' => '[ERROR] Fatal error in module test. [WARN] Memory high. [INFO] Running.',
+        ]);
+        
+        $this->assertNotEmpty($signals);
+    }
+
+    // -------------------------------------------------------------------------
+    // GeneSelector extended tests
+    // -------------------------------------------------------------------------
+
+    public function testGeneSelectorWithEmptyCapsules(): void
+    {
+        $selector = new \Evolver\GeneSelector();
+        
+        $genes = [
+            ['id' => 'gene1', 'signals_match' => ['error']],
+        ];
+        
+        $result = $selector->selectGeneAndCapsule([
+            'genes' => $genes,
+            'capsules' => [],
+            'signals' => ['error'],
+        ]);
+        
+        $this->assertIsArray($result);
+    }
+
+    public function testGeneSelectorComputeSignalOverlap(): void
+    {
+        $selector = new \Evolver\GeneSelector();
+        
+        $overlap = $selector->computeSignalOverlap(['error', 'bug'], ['error', 'fix']);
+        
+        $this->assertGreaterThan(0, $overlap);
+    }
+
+    public function testGeneSelectorBuildDecision(): void
+    {
+        $selector = new \Evolver\GeneSelector();
+        
+        $decision = $selector->buildSelectorDecision([
+            'genes' => [],
+            'capsules' => [],
+            'signals' => ['error'],
+        ]);
+        
+        $this->assertIsArray($decision);
+    }
+
+    // -------------------------------------------------------------------------
+    // PromptBuilder extended tests
+    // -------------------------------------------------------------------------
+
+    public function testPromptBuilderWithMinGdi(): void
+    {
+        $builder = new \Evolver\PromptBuilder();
+        
+        $prompt = $builder->buildGepPrompt([
+            'context' => 'test',
+            'signals' => ['error'],
+            'selector' => ['strategy' => 'balanced'],
+            'selectedGene' => ['id' => 'gene1', 'type' => 'Gene'],
+            'min_gdi' => 0.5,
+        ]);
+        
+        $this->assertStringContainsString('GEP', $prompt);
+    }
+
+    // -------------------------------------------------------------------------
+    // SafetyController extended tests
+    // -------------------------------------------------------------------------
+
+    public function testSafetyControllerGetMode(): void
+    {
+        $controller = new \Evolver\SafetyController();
+        
+        $mode = $controller->getMode();
+        $this->assertNotEmpty($mode);
+    }
+
+    public function testSafetyControllerIsOperationAllowed(): void
+    {
+        $controller = new \Evolver\SafetyController();
+        
+        $result = $controller->isOperationAllowed('evolver_run');
+        $this->assertIsBool($result);
+    }
+
+    public function testSafetyControllerGetStatusReport(): void
+    {
+        $controller = new \Evolver\SafetyController();
+        
+        $report = $controller->getStatusReport();
+        $this->assertIsArray($report);
+    }
+
+    public function testSafetyControllerCreateReviewRequest(): void
+    {
+        $controller = new \Evolver\SafetyController();
+        
+        $request = $controller->createReviewRequest([
+            'intent' => 'repair',
+            'files' => ['test.php'],
+        ]);
+        
+        $this->assertIsArray($request);
+    }
+
+    // -------------------------------------------------------------------------
+    // GepA2AProtocol extended tests
+    // -------------------------------------------------------------------------
+
+    public function testGepA2AProtocolBuildPublish(): void
+    {
+        $protocol = new \Evolver\GepA2AProtocol();
+        
+        $message = $protocol->buildPublish(['type' => 'Gene', 'id' => 'gene1', 'content' => 'test']);
+        
+        $this->assertIsArray($message);
+        $this->assertArrayHasKey('message_type', $message);
+    }
+
+    public function testGepA2AProtocolBuildFetch(): void
+    {
+        $protocol = new \Evolver\GepA2AProtocol();
+        
+        $message = $protocol->buildFetch(['type' => 'gene']);
+        
+        $this->assertIsArray($message);
+    }
+
+    public function testGepA2AProtocolBuildDecision(): void
+    {
+        $protocol = new \Evolver\GepA2AProtocol();
+        
+        $message = $protocol->buildDecision('accept', ['asset_id' => 'test']);
+        
+        $this->assertIsArray($message);
+    }
+
+    public function testGepA2AProtocolBuildHeartbeat(): void
+    {
+        $protocol = new \Evolver\GepA2AProtocol();
+        
+        $message = $protocol->buildHeartbeat(1000);
+        
+        $this->assertIsArray($message);
+    }
+
+    // -------------------------------------------------------------------------
+    // GepAssetStore extended tests
+    // -------------------------------------------------------------------------
+
+    public function testGepAssetStoreLoadTopCapsules(): void
+    {
+        $capsules = $this->store->loadTopCapsules(5);
+        $this->assertIsArray($capsules);
+    }
+
+    public function testGepAssetStoreLoadCapsulesByMinGdi(): void
+    {
+        $capsules = $this->store->loadCapsulesByMinGdi(0.5);
+        $this->assertIsArray($capsules);
+    }
+
+    public function testGepAssetStoreGetCapsulesGdiStats(): void
+    {
+        $stats = $this->store->getCapsulesGdiStats();
+        $this->assertIsArray($stats);
+    }
+
+    public function testGepAssetStoreComputeSuccessStreak(): void
+    {
+        $streak = $this->store->computeSuccessStreak('gene_repair', ['error']);
+        $this->assertIsInt($streak);
+    }
+
+    public function testGepAssetStoreGetPendingSyncAssets(): void
+    {
+        $assets = $this->store->getPendingSyncAssets('gene', 10);
+        $this->assertIsArray($assets);
+    }
+
+    public function testGepAssetStoreGetStats(): void
+    {
+        $stats = $this->store->getStats();
+        $this->assertIsArray($stats);
+    }
+
+    public function testGepAssetStoreGetGeneByAssetId(): void
+    {
+        $gene = $this->store->getGeneByAssetId('test_asset_id');
+        $this->assertNull($gene);
+    }
+
+    public function testGepAssetStoreGetCapsuleByAssetId(): void
+    {
+        $capsule = $this->store->getCapsuleByAssetId('test_asset_id');
+        $this->assertNull($capsule);
+    }
+
+    // -------------------------------------------------------------------------
+    // ContentHash extended tests
+    // -------------------------------------------------------------------------
+
+    public function testContentHashMultipleTypes(): void
+    {
+        $hash1 = \Evolver\ContentHash::computeAssetId(['type' => 'Gene']);
+        $hash2 = \Evolver\ContentHash::computeAssetId(['type' => 'Capsule']);
+        
+        $this->assertNotSame($hash1, $hash2);
+    }
+
+    // -------------------------------------------------------------------------
+    // SourceProtector extended tests
+    // -------------------------------------------------------------------------
+
+    public function testSourceProtectorGetProtectedPaths(): void
+    {
+        $protector = new \Evolver\SourceProtector();
+        
+        $paths = $protector->getProtectedPaths();
+        $this->assertIsArray($paths);
+    }
+
+    public function testSourceProtectorGetProtectionReport(): void
+    {
+        $protector = new \Evolver\SourceProtector();
+        
+        $report = $protector->getProtectionReport();
+        $this->assertIsArray($report);
+    }
+
+    public function testSourceProtectorAddProtectedPaths(): void
+    {
+        $protector = new \Evolver\SourceProtector();
+        
+        $protector->addProtectedPaths(['/test/path']);
+        
+        $this->assertTrue(true);
+    }
 }

@@ -2591,12 +2591,321 @@ class EvolverTest extends TestCase
         $this->assertNotEmpty($deviceId);
     }
 
-    public function testEnvFingerprintCaptureFingerprint(): void
+    public function testEnvFingerprintCapture(): void
     {
-        $fp = new \Evolver\EnvFingerprint();
+        $fp = \Evolver\EnvFingerprint::capture();
         
-        $fp->captureFingerprint();
+        $this->assertIsArray($fp);
+    }
+
+    // -------------------------------------------------------------------------
+    // SecurityAuditLogger tests
+    // -------------------------------------------------------------------------
+
+    public function testSecurityAuditLoggerBasic(): void
+    {
+        $logger = new \Evolver\Ops\SecurityAuditLogger('/tmp');
+        
+        $this->assertTrue($logger->isEnabled());
+    }
+
+    public function testSecurityAuditLoggerLogModificationRequest(): void
+    {
+        $logger = new \Evolver\Ops\SecurityAuditLogger('/tmp');
+        
+        $logger->logModificationRequest(['intent' => 'repair', 'files' => ['test.php']]);
         
         $this->assertTrue(true);
+    }
+
+    public function testSecurityAuditLoggerLogSafetyViolation(): void
+    {
+        $logger = new \Evolver\Ops\SecurityAuditLogger('/tmp');
+        
+        $logger->logSafetyViolation('unauthorized_access', ['path' => '/etc']);
+        
+        $this->assertTrue(true);
+    }
+
+    public function testSecurityAuditLoggerLogGeneOperation(): void
+    {
+        $logger = new \Evolver\Ops\SecurityAuditLogger('/tmp');
+        
+        $logger->logGeneOperation('upsert', ['id' => 'gene1']);
+        
+        $this->assertTrue(true);
+    }
+
+    public function testSecurityAuditLoggerLogCapsuleOperation(): void
+    {
+        $logger = new \Evolver\Ops\SecurityAuditLogger('/tmp');
+        
+        $logger->logCapsuleOperation('append', ['id' => 'capsule1']);
+        
+        $this->assertTrue(true);
+    }
+
+    public function testSecurityAuditLoggerLogSystemEvent(): void
+    {
+        $logger = new \Evolver\Ops\SecurityAuditLogger('/tmp');
+        
+        $logger->logSystemEvent('startup', ['version' => '1.0']);
+        
+        $this->assertTrue(true);
+    }
+
+    public function testSecurityAuditLoggerLogAccessAttempt(): void
+    {
+        $logger = new \Evolver\Ops\SecurityAuditLogger('/tmp');
+        
+        $logger->logAccessAttempt('/data', true, 'authorized');
+        
+        $this->assertTrue(true);
+    }
+
+    public function testSecurityAuditLoggerLogCommandExecution(): void
+    {
+        $logger = new \Evolver\Ops\SecurityAuditLogger('/tmp');
+        
+        $logger->logCommandExecution('php test.php', true);
+        
+        $this->assertTrue(true);
+    }
+
+    public function testSecurityAuditLoggerLogProtectionBypass(): void
+    {
+        $logger = new \Evolver\Ops\SecurityAuditLogger('/tmp');
+        
+        $logger->logProtectionBypass('/protected', false);
+        
+        $this->assertTrue(true);
+    }
+
+    public function testSecurityAuditLoggerGetRecentLogs(): void
+    {
+        $logger = new \Evolver\Ops\SecurityAuditLogger('/tmp');
+        
+        $logs = $logger->getRecentLogs(10);
+        
+        $this->assertIsArray($logs);
+    }
+
+    public function testSecurityAuditLoggerQueryByType(): void
+    {
+        $logger = new \Evolver\Ops\SecurityAuditLogger('/tmp');
+        
+        $logs = $logger->queryByType('modification_request', 10);
+        
+        $this->assertIsArray($logs);
+    }
+
+    public function testSecurityAuditLoggerQueryByTimeRange(): void
+    {
+        $logger = new \Evolver\Ops\SecurityAuditLogger('/tmp');
+        
+        $now = time();
+        $logs = $logger->queryByTimeRange($now - 3600, $now);
+        
+        $this->assertIsArray($logs);
+    }
+
+    public function testSecurityAuditLoggerGetStats(): void
+    {
+        $logger = new \Evolver\Ops\SecurityAuditLogger('/tmp');
+        
+        $stats = $logger->getStats();
+        
+        $this->assertIsArray($stats);
+    }
+
+    public function testSecurityAuditLoggerSetEnabled(): void
+    {
+        $logger = new \Evolver\Ops\SecurityAuditLogger('/tmp');
+        
+        $logger->setEnabled(false);
+        
+        $this->assertFalse($logger->isEnabled());
+    }
+
+    // -------------------------------------------------------------------------
+    // SignalDeduplicator extended tests
+    // -------------------------------------------------------------------------
+
+    public function testSignalDeduplicatorMultipleSignals(): void
+    {
+        $dedup = new \Evolver\Ops\SignalDeduplicator();
+        
+        $dedup->processSignal('error_1', ['file' => 'test1.php']);
+        $dedup->processSignal('error_2', ['file' => 'test2.php']);
+        
+        $this->assertGreaterThan(0, $dedup->getHistorySize());
+    }
+
+    // -------------------------------------------------------------------------
+    // SourceProtector extended tests
+    // -------------------------------------------------------------------------
+
+    public function testSourceProtectorIsProtected(): void
+    {
+        $protector = new \Evolver\SourceProtector();
+        
+        $result = $protector->isProtected(__FILE__);
+        
+        $this->assertIsBool($result);
+    }
+
+    public function testSourceProtectorGetProjectRoot(): void
+    {
+        $protector = new \Evolver\SourceProtector();
+        
+        $root = $protector->getProjectRoot();
+        
+        $this->assertNotEmpty($root);
+    }
+
+    // -------------------------------------------------------------------------
+    // GeneSelector extended tests
+    // -------------------------------------------------------------------------
+
+    public function testGeneSelectorSelectGene(): void
+    {
+        $selector = new \Evolver\GeneSelector();
+        
+        $genes = [
+            ['id' => 'gene1', 'signals_match' => ['error']],
+        ];
+        
+        $result = $selector->selectGene($genes, ['error']);
+        
+        $this->assertIsArray($result);
+    }
+
+    public function testGeneSelectorSelectCapsule(): void
+    {
+        $selector = new \Evolver\GeneSelector();
+        
+        $capsules = [
+            ['outcome' => ['score' => 0.9], 'confidence' => 0.9],
+        ];
+        
+        $result = $selector->selectCapsule($capsules, ['error']);
+        
+        $this->assertIsArray($result);
+    }
+
+    public function testGeneSelectorBanGenes(): void
+    {
+        $selector = new \Evolver\GeneSelector();
+        
+        $failedCapsules = [
+            ['gene' => 'gene1', 'outcome' => ['status' => 'failed']],
+        ];
+        
+        $result = $selector->banGenesFromFailedCapsules($failedCapsules, ['error']);
+        
+        $this->assertIsArray($result);
+    }
+
+    // -------------------------------------------------------------------------
+    // SolidifyEngine extended tests
+    // -------------------------------------------------------------------------
+
+    public function testSolidifyEngineWithValidation(): void
+    {
+        $gene = [
+            'id' => 'gene_validation_test',
+            'type' => 'Gene',
+            'category' => 'repair',
+            'signals_match' => ['error'],
+            'validation' => ['php -l {file}'],
+        ];
+        
+        $result = $this->solidifyEngine->solidify([
+            'intent' => 'repair',
+            'summary' => 'Fixed with validation',
+            'signals' => ['error'],
+            'gene' => $gene,
+            'blastRadius' => ['files' => 1, 'lines' => 5],
+        ]);
+        
+        $this->assertIsArray($result);
+    }
+
+    // -------------------------------------------------------------------------
+    // PromptBuilder extended tests
+    // -------------------------------------------------------------------------
+
+    public function testPromptBuilderBuildGepPromptWithAllParams(): void
+    {
+        $builder = new \Evolver\PromptBuilder();
+        
+        $prompt = $builder->buildGepPrompt([
+            'context' => 'test context with lots of content that should be truncated because it is too long to fit in the context window of most language models and we need to ensure the system can handle this gracefully without breaking',
+            'signals' => ['error', 'bug', 'crash'],
+            'selector' => ['strategy' => 'innovate'],
+            'selectedGene' => ['id' => 'gene1', 'type' => 'Gene', 'category' => 'repair'],
+            'capsules' => [],
+            'min_gdi' => 0.7,
+        ]);
+        
+        $this->assertIsString($prompt);
+    }
+
+    // -------------------------------------------------------------------------
+    // Database extended tests
+    // -------------------------------------------------------------------------
+
+    public function testDatabaseExecWithParams(): void
+    {
+        $db = new \Evolver\Database(':memory:');
+        
+        $db->exec('CREATE TABLE test (id INTEGER, value TEXT)');
+        $result = $db->exec('INSERT INTO test (id, value) VALUES (?, ?)', [1, 'test']);
+        
+        $this->assertTrue($result);
+    }
+
+    // -------------------------------------------------------------------------
+    // GepValidator extended tests
+    // -------------------------------------------------------------------------
+
+    public function testGepValidatorValidateCapsuleInvalid(): void
+    {
+        $validator = new \Evolver\GepValidator();
+        
+        $capsule = ['type' => 'Capsule'];
+        
+        $result = $validator->validateCapsule($capsule);
+        
+        $this->assertFalse($result['valid']);
+    }
+
+    // -------------------------------------------------------------------------
+    // GdiCalculator extended tests
+    // -------------------------------------------------------------------------
+
+    public function testGdiCalculatorWithAllFields(): void
+    {
+        $calculator = new \Evolver\GdiCalculator();
+        
+        $capsule = [
+            'outcome' => ['score' => 0.95],
+            'confidence' => 0.9,
+            'success_streak' => 10,
+            'blast_radius' => ['files' => 1, 'lines' => 20],
+            'content' => 'test content',
+        ];
+        
+        $score = $calculator->computeCapsuleGdi($capsule);
+        
+        $this->assertGreaterThan(0.8, $score);
+    }
+
+    public function testGdiCalculatorCategoryBoundaries(): void
+    {
+        $calculator = new \Evolver\GdiCalculator();
+        
+        $this->assertSame('excellent', $calculator->getGdiCategory(1.0));
+        $this->assertSame('very_poor', $calculator->getGdiCategory(0.0));
     }
 }

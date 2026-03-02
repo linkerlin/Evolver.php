@@ -29,7 +29,7 @@ class EvolverTest extends TestCase
 
     protected function setUp(): void
     {
-        // Use in-memory SQLite for tests
+        // 使用内存数据库进行测试
         $this->db = new Database(':memory:');
         $this->store = new GepAssetStore($this->db);
         $this->signalExtractor = new SignalExtractor();
@@ -39,7 +39,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // Database tests
+    // 数据库测试
     // -------------------------------------------------------------------------
 
     public function testDatabaseCreatesSchema(): void
@@ -54,22 +54,22 @@ class EvolverTest extends TestCase
 
     public function testDatabasePragmasSet(): void
     {
-        // In-memory SQLite uses 'memory' journal mode (WAL not supported for :memory:)
-        // Test that journal_mode pragma is readable and returns a valid value
+        // 内存SQLite使用memory日志模式 (WAL not supported for :memory:)
+        // 测试journal_mode pragma is readable and returns a valid value
         $journalMode = $this->db->fetchOne('PRAGMA journal_mode');
         $mode = strtolower($journalMode['journal_mode'] ?? '');
         $this->assertContains($mode, ['wal', 'memory', 'delete', 'truncate', 'persist']);
     }
 
     // -------------------------------------------------------------------------
-    // GepAssetStore tests
+    // 资源存储测试
     // -------------------------------------------------------------------------
 
     public function testSeedDefaultGenes(): void
     {
-        // Default genes should be seeded from data/default_genes.json
+        // 默认基因应该从 from data/default_genes.json
         $genes = $this->store->loadGenes();
-        $this->assertNotEmpty($genes, 'Default genes should be seeded');
+        $this->assertNotEmpty($genes, '默认基因应该从');
         $this->assertGreaterThanOrEqual(3, count($genes));
     }
 
@@ -181,7 +181,7 @@ class EvolverTest extends TestCase
             'outcome' => ['status' => 'success', 'score' => 0.9],
         ]);
 
-        // Last event should be retrievable
+        // 最后一个事件应该可检索
         $lastId = $this->store->getLastEventId();
         $this->assertNotNull($lastId);
     }
@@ -197,7 +197,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // SignalExtractor tests
+    // 信号提取器测试
     // -------------------------------------------------------------------------
 
     public function testExtractErrorSignal(): void
@@ -242,7 +242,7 @@ class EvolverTest extends TestCase
 
     public function testExtractRecurringErrorSignal(): void
     {
-        // Use JSON-like content with } to match the regex [^}]{0,200}
+        // 使用类JSON内容 with } to match the regex [^}]{0,200}
         $context = implode(' ', array_fill(0, 5, '{"status": "error", "code": 500}'));
         $signals = $this->signalExtractor->extract(['context' => $context]);
         $this->assertContains('recurring_error', $signals);
@@ -278,7 +278,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // GeneSelector tests
+    // 基因选择器测试
     // -------------------------------------------------------------------------
 
     public function testMatchPatternToSignals(): void
@@ -370,7 +370,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // PromptBuilder tests
+    // 提示构建器测试
     // -------------------------------------------------------------------------
 
     public function testBuildGepPromptContainsKeyElements(): void
@@ -434,7 +434,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // SolidifyEngine tests
+    // 固化引擎测试
     // -------------------------------------------------------------------------
 
     public function testSolidifyDryRun(): void
@@ -455,7 +455,7 @@ class EvolverTest extends TestCase
         $this->assertTrue($result['dryRun']);
         $this->assertNotNull($result['eventId']);
 
-        // Verify nothing was written to DB in dry run
+        // 验证没有写入 to DB in dry run
         $events = $this->store->loadRecentEvents(1);
         $this->assertEmpty($events);
     }
@@ -549,14 +549,14 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // EnvFingerprint tests
+    // 环境指纹测试
     // -------------------------------------------------------------------------
 
     public function testCaptureFingerprintStructure(): void
     {
         $fp = EnvFingerprint::capture();
 
-        // Required keys must all be present
+        // 必需键必须全部存在
         $this->assertArrayHasKey('device_id', $fp);
         $this->assertArrayHasKey('php_version', $fp);
         $this->assertArrayHasKey('platform', $fp);
@@ -575,26 +575,26 @@ class EvolverTest extends TestCase
     {
         $fp = EnvFingerprint::capture();
 
-        // php_version must start with "PHP/"
+        // php_version必须以 "PHP/"
         $this->assertStringStartsWith('PHP/', $fp['php_version']);
 
-        // platform must be one of the expected values
+        // 平台必须是之一 the expected values
         $this->assertContains($fp['platform'], ['linux', 'darwin', 'win32', 'freebsd', 'openbsd']);
 
-        // hostname must be a 12-char hex string (SHA-256 prefix)
+        // 主机名必须是 12-char hex string (SHA-256 prefix)
         $this->assertMatchesRegularExpression('/^[a-f0-9]{12}$/', $fp['hostname']);
 
-        // device_id must be a hex string of 16–64 chars
+        // device_id必须是 16-64个十六进制字符的字符串
         $this->assertMatchesRegularExpression('/^[a-f0-9]{16,64}$/', $fp['device_id']);
 
-        // cwd must be a non-empty string
+        // cwd必须是 非空字符串
         $this->assertIsString($fp['cwd']);
         $this->assertNotEmpty($fp['cwd']);
 
-        // container must be a bool
+        // 容器必须是 bool
         $this->assertIsBool($fp['container']);
 
-        // client must default to the composer name or 'evolver-php'
+        // 客户端默认为 the composer name or 'evolver-php'
         $this->assertIsString($fp['client']);
         $this->assertNotEmpty($fp['client']);
     }
@@ -603,12 +603,12 @@ class EvolverTest extends TestCase
     {
         $fp = EnvFingerprint::capture();
 
-        // Same fingerprint → same key
+        // 相同指纹→相同键
         $key1 = EnvFingerprint::key($fp);
         $key2 = EnvFingerprint::key($fp);
         $this->assertSame($key1, $key2);
 
-        // Key must be 16 hex chars
+        // 键必须是16个十六进制字符
         $this->assertMatchesRegularExpression('/^[a-f0-9]{16}$/', $key1);
     }
 
@@ -617,7 +617,7 @@ class EvolverTest extends TestCase
         $fp = EnvFingerprint::capture();
         $key1 = EnvFingerprint::key($fp);
 
-        // Change one field → different key
+        // 更改一个字段→不同的键
         $modified = $fp;
         $modified['device_id'] = 'deadbeefdeadbeefdeadbeefdeadbeef';
         $key2 = EnvFingerprint::key($modified);
@@ -647,7 +647,7 @@ class EvolverTest extends TestCase
 
     public function testGetDeviceIdIsCached(): void
     {
-        // Two calls must return the same device ID (caching)
+        // 两次调用必须返回 the same device ID (caching)
         $id1 = EnvFingerprint::getDeviceId();
         $id2 = EnvFingerprint::getDeviceId();
         $this->assertSame($id1, $id2);
@@ -697,13 +697,13 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // MCP Resources & Tools (via McpServer)
+    //  MCP资源与工具 (via McpServer)
     // -------------------------------------------------------------------------
 
     /** Run a JSON-RPC sequence through the MCP server and collect responses. */
     private function runMcpSequence(array $messages, string $dbPath = ':memory:'): array
     {
-        // Write messages to a temp file to pipe into the server
+        // 写入临时文件 to pipe into the server
         $input = '';
         foreach ($messages as $msg) {
             $input .= json_encode($msg) . "\n";
@@ -745,7 +745,7 @@ class EvolverTest extends TestCase
         @unlink($dbPath . '-wal');
         @unlink($dbPath . '-shm');
 
-        // Find the resources/list response (id=2)
+        // 查找资源列表响应 (id=2)
         $listResp = null;
         foreach ($responses as $r) {
             if (($r['id'] ?? null) === 2) {
@@ -864,13 +864,13 @@ class EvolverTest extends TestCase
             }
         }
         $this->assertNotNull($readResp);
-        // Should return an error response
+        // 应返回错误响应
         $this->assertArrayHasKey('error', $readResp);
     }
 
     public function testToolDeleteGene(): void
     {
-        // Seed a gene first
+        // 先植入一个基因
         $this->store->upsertGene([
             'type' => 'Gene',
             'id' => 'gene_to_delete',
@@ -908,7 +908,7 @@ class EvolverTest extends TestCase
         $tools = $listResp['result']['tools'] ?? [];
         $toolNames = array_column($tools, 'name');
         $this->assertContains('evolver_delete_gene', $toolNames);
-        // Verify the full expected set of tools
+        // 验证完整预期集合 of tools
         $expectedTools = [
             'evolver_run', 'evolver_solidify', 'evolver_extract_signals',
             'evolver_list_genes', 'evolver_list_capsules', 'evolver_list_events',
@@ -920,7 +920,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // ContentHash tests
+    // 内容哈希测试
     // -------------------------------------------------------------------------
 
     public function testContentHashCanonicalize(): void
@@ -954,7 +954,7 @@ class EvolverTest extends TestCase
         
         $this->assertTrue(ContentHash::verifyAssetId($gene));
         
-        // Tamper with data
+        // 篡改数据
         $gene['category'] = 'optimize';
         $this->assertFalse(ContentHash::verifyAssetId($gene));
     }
@@ -968,7 +968,7 @@ class EvolverTest extends TestCase
         ];
         $assetId1 = ContentHash::computeAssetId($gene);
         
-        // Add asset_id and recompute - should get same result
+        // 添加asset_id并重新计算 - should get same result
         $gene['asset_id'] = $assetId1;
         $assetId2 = ContentHash::computeAssetId($gene);
         
@@ -976,19 +976,19 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // SourceProtector tests
+    // 源码保护器测试
     // -------------------------------------------------------------------------
 
     public function testSourceProtectorDetectsProtectedFiles(): void
     {
         $protector = new SourceProtector();
         
-        // These should be protected
+        // 这些应该被保护
         $this->assertTrue($protector->isProtected('src/McpServer.php'));
         $this->assertTrue($protector->isProtected('src/Database.php'));
         $this->assertTrue($protector->isProtected('evolver.php'));
         
-        // These should not be protected
+        // 这些不应该被保护
         $this->assertFalse($protector->isProtected('src/SomeUserFile.php'));
         $this->assertFalse($protector->isProtected('user_script.php'));
     }
@@ -1009,12 +1009,12 @@ class EvolverTest extends TestCase
 
     public function testSourceProtectorBypassCheck(): void
     {
-        // By default, bypass should not be available
+        // 默认情况下旁路不可用
         $this->assertFalse(SourceProtector::canBypass());
     }
 
     // -------------------------------------------------------------------------
-    // SafetyController tests
+    // 安全控制器测试
     // -------------------------------------------------------------------------
 
     public function testSafetyControllerModes(): void
@@ -1054,7 +1054,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // GepA2AProtocol tests
+    // GEP协议测试
     // -------------------------------------------------------------------------
 
     public function testGepA2AProtocolBuildsMessage(): void
@@ -1101,19 +1101,19 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // SignalDeduplicator tests
+    // 信号去重测试
     // -------------------------------------------------------------------------
 
     public function testSignalDeduplicatorSuppressesDuplicates(): void
     {
         $dedup = new SignalDeduplicator(3600);
         
-        // First occurrence - should not suppress
+        // 首次出现-不应抑制
         $result1 = $dedup->shouldSuppress('test_error');
         $this->assertFalse($result1['suppress']);
         $this->assertSame(1, $result1['count']);
         
-        // Second occurrence - should suppress
+        // 第二次出现-应抑制
         $result2 = $dedup->shouldSuppress('test_error');
         $this->assertTrue($result2['suppress']);
         $this->assertSame(2, $result2['count']);
@@ -1126,13 +1126,13 @@ class EvolverTest extends TestCase
         $result = $dedup->processSignal('error_in_module', ['file' => 'test.php']);
         $this->assertSame('notify', $result['action']);
         
-        // Same signal again
+        // 相同信号再次
         $result = $dedup->processSignal('error_in_module', ['file' => 'test.php']);
         $this->assertSame('suppressed', $result['action']);
     }
 
     // -------------------------------------------------------------------------
-    // Integration tests
+    // 集成测试
     // -------------------------------------------------------------------------
 
     public function testFullEvolutionCycle(): void
@@ -1183,7 +1183,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // GdiCalculator tests
+    // GDI计算器测试
     // -------------------------------------------------------------------------
 
     public function testGdiCalculatorComputesCapsuleScore(): void
@@ -1281,7 +1281,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // StrategyConfig tests
+    // 策略配置测试
     // -------------------------------------------------------------------------
 
     public function testStrategyConfigDefaultValues(): void
@@ -1344,7 +1344,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // GepValidator tests
+    // GEP验证器测试
     // -------------------------------------------------------------------------
 
     public function testGepValidatorValidatesMutation(): void
@@ -1442,7 +1442,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // Ops tests - DiskCleaner
+    // 运维测试 - DiskCleaner
     // -------------------------------------------------------------------------
 
     public function testDiskCleanerCheckDiskSpace(): void
@@ -1465,7 +1465,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // Ops tests - LifecycleManager
+    // 运维测试 - LifecycleManager
     // -------------------------------------------------------------------------
 
     public function testLifecycleManagerBasicOperations(): void
@@ -1500,7 +1500,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // Ops tests - SignalDeduplicator (extended)
+    // 运维测试 - SignalDeduplicator (扩展)
     // -------------------------------------------------------------------------
 
     public function testSignalDeduplicatorHistorySize(): void
@@ -1524,7 +1524,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // Ops tests - OpsManager
+    // 运维测试 - OpsManager
     // -------------------------------------------------------------------------
 
     public function testOpsManagerListCommands(): void
@@ -1576,7 +1576,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // EvoMapClient tests
+    // EvoMap客户端测试
     // -------------------------------------------------------------------------
 
     public function testEvoMapClientDefaultConfiguration(): void
@@ -1633,7 +1633,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // EvolutionLoop tests
+    // 演化循环测试
     // -------------------------------------------------------------------------
 
     public function testEvolutionLoopBasicOperations(): void
@@ -1655,7 +1655,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // Database extended tests
+    // Database 扩展测试
     // -------------------------------------------------------------------------
 
     public function testDatabaseQuery(): void
@@ -1715,7 +1715,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // StructuredLogger tests
+    // 结构化日志测试
     // -------------------------------------------------------------------------
 
     public function testStructuredLoggerBasic(): void
@@ -1746,7 +1746,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // GitSelfRepair tests
+    // Git自修复测试
     // -------------------------------------------------------------------------
 
     public function testGitSelfRepairBasic(): void
@@ -1776,7 +1776,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // DaemonManager tests
+    // 守护进程管理器测试
     // -------------------------------------------------------------------------
 
     public function testDaemonManagerBasic(): void
@@ -1796,7 +1796,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // SignalExtractor extended tests
+    // SignalExtractor 扩展测试
     // -------------------------------------------------------------------------
 
     public function testSignalExtractorMultipleSignals(): void
@@ -1811,7 +1811,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // GeneSelector extended tests
+    // GeneSelector 扩展测试
     // -------------------------------------------------------------------------
 
     public function testGeneSelectorWithEmptyCapsules(): void
@@ -1854,7 +1854,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // PromptBuilder extended tests
+    // PromptBuilder 扩展测试
     // -------------------------------------------------------------------------
 
     public function testPromptBuilderWithMinGdi(): void
@@ -1873,7 +1873,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // SafetyController extended tests
+    // SafetyController 扩展测试
     // -------------------------------------------------------------------------
 
     public function testSafetyControllerGetMode(): void
@@ -1913,7 +1913,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // GepA2AProtocol extended tests
+    // GepA2AProtocol 扩展测试
     // -------------------------------------------------------------------------
 
     public function testGepA2AProtocolBuildPublish(): void
@@ -1954,7 +1954,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // GepAssetStore extended tests
+    // GepAssetStore 扩展测试
     // -------------------------------------------------------------------------
 
     public function testGepAssetStoreLoadTopCapsules(): void
@@ -2006,7 +2006,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // ContentHash extended tests
+    // ContentHash 扩展测试
     // -------------------------------------------------------------------------
 
     public function testContentHashMultipleTypes(): void
@@ -2018,7 +2018,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // SourceProtector extended tests
+    // SourceProtector 扩展测试
     // -------------------------------------------------------------------------
 
     public function testSourceProtectorGetProtectedPaths(): void
@@ -2047,7 +2047,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // EvoMapClient extended tests
+    // EvoMapClient 扩展测试
     // -------------------------------------------------------------------------
 
     public function testEvoMapClientGetLastError(): void
@@ -2108,7 +2108,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // EvolutionLoop extended tests
+    // EvolutionLoop 扩展测试
     // -------------------------------------------------------------------------
 
     public function testEvolutionLoopStop(): void
@@ -2130,7 +2130,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // PromptBuilder extended tests
+    // PromptBuilder 扩展测试
     // -------------------------------------------------------------------------
 
     public function testPromptBuilderBuildReusePrompt(): void
@@ -2175,7 +2175,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // SolidifyEngine extended tests
+    // SolidifyEngine 扩展测试
     // -------------------------------------------------------------------------
 
     public function testSolidifyEngineWithHighGdiCapsule(): void
@@ -2200,7 +2200,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // SignalExtractor extended tests
+    // SignalExtractor 扩展测试
     // -------------------------------------------------------------------------
 
     public function testSignalExtractorExtractEmptyContext(): void
@@ -2224,7 +2224,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // ContentHash extended tests
+    // ContentHash 扩展测试
     // -------------------------------------------------------------------------
 
     public function testContentHashVerifyAssetIdMismatch(): void
@@ -2238,7 +2238,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // Database extended tests
+    // Database 扩展测试
     // -------------------------------------------------------------------------
 
     public function testDatabaseWithInvalidQuery(): void
@@ -2266,7 +2266,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // GepValidator extended tests
+    // GepValidator 扩展测试
     // -------------------------------------------------------------------------
 
     public function testGepValidatorInvalidMutation(): void
@@ -2296,7 +2296,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // StrategyConfig extended tests
+    // StrategyConfig 扩展测试
     // -------------------------------------------------------------------------
 
     public function testStrategyConfigSetInvalidStrategy(): void
@@ -2323,7 +2323,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // GdiCalculator extended tests
+    // GdiCalculator 扩展测试
     // -------------------------------------------------------------------------
 
     public function testGdiCalculatorEmptyCapsule(): void
@@ -2350,7 +2350,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // DiskCleaner extended tests
+    // DiskCleaner 扩展测试
     // -------------------------------------------------------------------------
 
     public function testDiskCleanerCleanup(): void
@@ -2390,7 +2390,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // LifecycleManager extended tests
+    // LifecycleManager 扩展测试
     // -------------------------------------------------------------------------
 
     public function testLifecycleManagerOnStartup(): void
@@ -2468,7 +2468,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // SignalDeduplicator extended tests
+    // SignalDeduplicator 扩展测试
     // -------------------------------------------------------------------------
 
     public function testSignalDeduplicatorShouldSuppress(): void
@@ -2490,7 +2490,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // DaemonManager extended tests
+    // DaemonManager 扩展测试
     // -------------------------------------------------------------------------
 
     public function testDaemonManagerStart(): void
@@ -2539,7 +2539,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // GepAssetStore extended tests
+    // GepAssetStore 扩展测试
     // -------------------------------------------------------------------------
 
     public function testGepAssetStoreLoadCapsulesByGdi(): void
@@ -2557,7 +2557,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // OpsManager extended tests
+    // OpsManager 扩展测试
     // -------------------------------------------------------------------------
 
     public function testOpsManagerRunClean(): void
@@ -2579,7 +2579,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // EnvFingerprint extended tests
+    // EnvFingerprint 扩展测试
     // -------------------------------------------------------------------------
 
     public function testEnvFingerprintGetDeviceId(): void
@@ -2599,7 +2599,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // SecurityAuditLogger tests
+    // 安全审计日志测试
     // -------------------------------------------------------------------------
 
     public function testSecurityAuditLoggerBasic(): void
@@ -2728,7 +2728,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // SignalDeduplicator extended tests
+    // SignalDeduplicator 扩展测试
     // -------------------------------------------------------------------------
 
     public function testSignalDeduplicatorMultipleSignals(): void
@@ -2742,7 +2742,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // SourceProtector extended tests
+    // SourceProtector 扩展测试
     // -------------------------------------------------------------------------
 
     public function testSourceProtectorIsProtected(): void
@@ -2764,7 +2764,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // GeneSelector extended tests
+    // GeneSelector 扩展测试
     // -------------------------------------------------------------------------
 
     public function testGeneSelectorSelectGene(): void
@@ -2807,7 +2807,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // SolidifyEngine extended tests
+    // SolidifyEngine 扩展测试
     // -------------------------------------------------------------------------
 
     public function testSolidifyEngineWithValidation(): void
@@ -2832,7 +2832,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // PromptBuilder extended tests
+    // PromptBuilder 扩展测试
     // -------------------------------------------------------------------------
 
     public function testPromptBuilderBuildGepPromptWithAllParams(): void
@@ -2852,7 +2852,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // Database extended tests
+    // Database 扩展测试
     // -------------------------------------------------------------------------
 
     public function testDatabaseExecWithParams(): void
@@ -2866,7 +2866,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // GepValidator extended tests
+    // GepValidator 扩展测试
     // -------------------------------------------------------------------------
 
     public function testGepValidatorValidateCapsuleInvalid(): void
@@ -2881,7 +2881,7 @@ class EvolverTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // GdiCalculator extended tests
+    // GdiCalculator 扩展测试
     // -------------------------------------------------------------------------
 
     public function testGdiCalculatorWithAllFields(): void

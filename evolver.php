@@ -17,6 +17,9 @@ declare(strict_types=1);
  *   php evolver.php --review           # Start in review mode (require human approval)
  *   php evolver.php --loop [interval]  # Start in continuous loop mode (seconds between cycles)
  *   php evolver.php --validate-gep     # Validate GEP protocol output
+ *   php evolver.php --daemon start     # Start as daemon
+ *   php evolver.php --daemon stop      # Stop daemon
+ *   php evolver.php --daemon status    # Check daemon status
  *
  * Ops commands:
  *   cleanup    - Clean old logs, temp files
@@ -72,6 +75,7 @@ use Evolver\Database;
 use Evolver\McpServer;
 use Evolver\EvolutionLoop;
 use Evolver\Ops\OpsManager;
+use Evolver\Ops\DaemonManager;
 
 // Parse CLI arguments
 $args = array_slice($argv ?? [], 1);
@@ -83,6 +87,7 @@ $reviewMode = false;
 $loopMode = false;
 $loopInterval = 60;
 $validateGep = false;
+$daemonCommand = null;
 
 for ($i = 0; $i < count($args); $i++) {
     if ($args[$i] === '--db' && isset($args[$i + 1])) {
@@ -91,6 +96,8 @@ for ($i = 0; $i < count($args); $i++) {
         $validate = true;
     } elseif ($args[$i] === '--validate-gep') {
         $validateGep = true;
+    } elseif ($args[$i] === '--daemon' && isset($args[$i + 1])) {
+        $daemonCommand = $args[++$i];
     } elseif ($args[$i] === '--review') {
         $reviewMode = true;
     } elseif ($args[$i] === '--loop') {
@@ -203,6 +210,34 @@ if ($validateGep) {
         exit($result['valid'] ? 0 : 1);
     } catch (\Throwable $e) {
         echo "❌ Validation error: " . $e->getMessage() . "\n";
+        exit(1);
+    }
+}
+
+if ($daemonCommand !== null) {
+    // Daemon mode: manage daemon process
+    try {
+        $daemonManager = new DaemonManager(dirname($dbPath));
+
+        $result = match ($daemonCommand) {
+            'start' => $daemonManager->start([
+                'interval' => $loopInterval,
+                'review' => $reviewMode,
+            ]),
+            'stop' => $daemonManager->stop(),
+            'status' => $daemonManager->getStatus(),
+            'restart' => $daemonManager->restart([
+                'interval' => $loopInterval,
+                'review' => $reviewMode,
+            ]),
+            'log' => $daemonManager->getLog(50),
+            default => ['ok' => false, 'error' => "Unknown daemon command: {$daemonCommand}"],
+        };
+
+        echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n";
+        exit($result['ok'] ?? false ? 0 : 1);
+    } catch (\Throwable $e) {
+        echo "❌ Daemon error: " . $e->getMessage() . "\n";
         exit(1);
     }
 }

@@ -63,7 +63,7 @@ ENSURE VALID JSON SYNTAX (escape quotes in strings).
    }
 
 3. Gene (The Knowledge)
-   - Reuse/update existing ID if possible. Create new only if novel pattern.
+   - Reuse/update existing ID if possible. 创建new only if novel pattern.
    {
      "type": "Gene",
      "schema_version": "1.5.0",
@@ -91,7 +91,7 @@ ENSURE VALID JSON SYNTAX (escape quotes in strings).
 SCHEMA;
 
     /**
-     * Build the main GEP protocol prompt.
+     * 构建the main GEP protocol prompt.
      */
     public function buildGepPrompt(array $input): string
     {
@@ -123,9 +123,9 @@ SCHEMA;
         } else {
             $strategyBlock = "ACTIVE STRATEGY (Generic):\n" .
                 "1. Analyze signals and context.\n" .
-                "2. Select or create a Gene that addresses the root cause.\n" .
+                "2. 选择or create a Gene that addresses the root cause.\n" .
                 "3. Apply minimal, safe changes.\n" .
-                "4. Validate changes strictly.\n" .
+                "4. 验证 changes strictly.\n" .
                 "5. Solidify knowledge.";
         }
 
@@ -164,7 +164,7 @@ SCHEMA;
         $envFingerprint = EnvFingerprint::capture();
         $envFingerprintJson = json_encode($envFingerprint, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-        // Build the prompt
+        // 构建the prompt
         return trim(<<<PROMPT
         GEP -- EVOLUTION PROTOCOL{$cycleLabel} [{$nowIso}]
 
@@ -213,7 +213,7 @@ SCHEMA;
     }
 
     /**
-     * Build a minimal reuse prompt for direct capsule reuse mode.
+     * 构建a minimal reuse prompt for direct capsule reuse mode.
      */
     public function buildReusePrompt(array $input): string
     {
@@ -248,7 +248,7 @@ SCHEMA;
         Instructions:
         1. Read the capsule details below.
         2. Apply the fix to the local codebase, adapting paths/names.
-        3. Run validation to confirm it works.
+        3. 运行validation to confirm it works.
         4. If passed, solidify the result.
         5. If failed, ROLLBACK and report.
 
@@ -260,7 +260,7 @@ SCHEMA;
     }
 
     /**
-     * Format genes for preview in the prompt.
+     * 格式化genes for preview in the prompt.
      */
     public function formatGenesPreview(array $genes, int $limit = 5): string
     {
@@ -281,7 +281,7 @@ SCHEMA;
     }
 
     /**
-     * Format capsules for preview in the prompt.
+     * 格式化capsules for preview in the prompt.
      */
     public function formatCapsulesPreview(array $capsules, int $limit = 3): string
     {
@@ -314,7 +314,7 @@ SCHEMA;
     }
 
     /**
-     * Build anti-pattern zone block from failed capsules.
+     * 构建anti-pattern zone block from failed capsules.
      */
     private function buildAntiPatternZone(array $failedCapsules, array $signals): string
     {
@@ -322,7 +322,7 @@ SCHEMA;
             return '';
         }
 
-        $sigSet = array_flip(array_map('strtolower', array_map('strval', $signals)));
+        $sig设置= array_flip(array_map('strtolower', array_map('strval', $signals)));
         $matched = [];
 
         for ($i = count($failedCapsules) - 1; $i >= 0 && count($matched) < 3; $i--) {
@@ -351,7 +351,7 @@ SCHEMA;
                 : '(no diff)';
             $triggerStr = implode(', ', array_slice($fc['trigger'] ?? [], 0, 4));
             $failureReason = substr((string)($fc['failure_reason'] ?? 'unknown'), 0, 300);
-            $diffPreviewClean = str_replace("\n", ' ', $diffPreview);
+            $diffPreview清理= str_replace("\n", ' ', $diffPreview);
             $lines[] = "  " . ($idx + 1) . ". Gene: " . ($fc['gene'] ?? 'unknown') . " | Signals: [{$triggerStr}]";
             $lines[] = "     Failure: {$failureReason}";
             $lines[] = "     Diff (first 500 chars): {$diffPreviewClean}";

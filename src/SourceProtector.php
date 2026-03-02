@@ -45,7 +45,7 @@ final class SourceProtector
     }
 
     /**
-     * Check if a path is protected.
+     * 检查 a path is protected.
      * 
      * @param string $path Path to check (can be absolute or relative)
      * @return bool
@@ -56,7 +56,7 @@ final class SourceProtector
         $normalizedPath = $this->normalizePath($path);
         $relativePath = $this->getRelativePath($normalizedPath);
 
-        // Check exact matches
+        // 检查exact matches
         foreach ($this->protectedPaths as $protected) {
             if ($relativePath === $protected) {
                 return true;
@@ -67,7 +67,7 @@ final class SourceProtector
             }
         }
 
-        // Check pattern matches
+        // 检查pattern matches
         foreach ($this->protectedPatterns as $pattern) {
             if ($this->matchPattern($relativePath, $pattern)) {
                 return true;
@@ -78,7 +78,7 @@ final class SourceProtector
     }
 
     /**
-     * Validate that a list of files doesn't contain any protected paths.
+     * 验证 that a list of files doesn't contain any protected paths.
      * 
      * @param array<string> $files List of file paths to validate
      * @return array{ok: bool, violations: array<string>}
@@ -117,7 +117,7 @@ final class SourceProtector
     }
 
     /**
-     * Add additional protected paths at runtime.
+     * 添加additional protected paths at runtime.
      * 
      * @param array<string> $paths
      */
@@ -132,7 +132,7 @@ final class SourceProtector
     }
 
     /**
-     * Get list of all protected paths.
+     * 获取list of all protected paths.
      * 
      * @return array<string>
      */
@@ -142,7 +142,7 @@ final class SourceProtector
     }
 
     /**
-     * Check if source protection can be bypassed (emergency mode).
+     * 检查 source protection can be bypassed (emergency mode).
      * This should only be used in testing or recovery scenarios.
      * 
      * @return bool
@@ -166,7 +166,7 @@ final class SourceProtector
         // Normalize directory separators
         $path = str_replace('\\', '/', $path);
 
-        // Remove . and .. segments
+        // 移除. and .. segments
         $parts = explode('/', $path);
         $result = [];
         foreach ($parts as $part) {
@@ -181,7 +181,7 @@ final class SourceProtector
     }
 
     /**
-     * Check if a path is absolute.
+     * 检查 a path is absolute.
      */
     private function isAbsolutePath(string $path): bool
     {
@@ -190,7 +190,7 @@ final class SourceProtector
     }
 
     /**
-     * Get relative path from project root.
+     * 获取relative path from project root.
      */
     private function getRelativePath(string $absolutePath): string
     {
@@ -202,7 +202,7 @@ final class SourceProtector
     }
 
     /**
-     * Match a path against a wildcard pattern.
+     * 匹配a path against a wildcard pattern.
      * Supports * (any characters) and ? (single character).
      */
     private function matchPattern(string $path, string $pattern): bool
@@ -221,7 +221,7 @@ final class SourceProtector
     }
 
     /**
-     * Get the project root directory.
+     * 获取 project root directory.
      */
     public function getProjectRoot(): string
     {
@@ -229,7 +229,7 @@ final class SourceProtector
     }
 
     /**
-     * Create a protection report for debugging.
+     * 创建a protection report for debugging.
      */
     public function getProtectionReport(): array
     {

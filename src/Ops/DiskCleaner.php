@@ -28,7 +28,7 @@ final class DiskCleaner
     }
 
     /**
-     * Run cleanup operation.
+     * 运行cleanup operation.
      */
     public function cleanup(): array
     {
@@ -40,7 +40,7 @@ final class DiskCleaner
             'space_freed_bytes' => 0,
         ];
 
-        // Clean old logs
+        // 清理old logs
         $logResult = $this->cleanLogs();
         $results['logs_cleaned'] = $logResult['count'];
         $results['space_freed_bytes'] += $logResult['bytes_freed'];
@@ -49,13 +49,13 @@ final class DiskCleaner
         $eventResult = $this->archiveOldEvents();
         $results['events_archived'] = $eventResult['count'];
 
-        // Clean temp files
+        // 清理temp files
         $tempResult = $this->cleanTempFiles();
         $results['temp_files_removed'] = $tempResult['count'];
         $results['space_freed_bytes'] += $tempResult['bytes_freed'];
 
-        // Check disk space
-        $spaceCheck = $this->checkDiskSpace();
+        // 检查disk space
+        $space检查= $this->checkDiskSpace();
         $results['disk_space_ok'] = $spaceCheck['ok'];
         $results['free_space_mb'] = $spaceCheck['free_mb'];
 
@@ -63,7 +63,7 @@ final class DiskCleaner
     }
 
     /**
-     * Clean old log files.
+     * 清理old log files.
      */
     public function cleanLogs(): array
     {
@@ -91,7 +91,7 @@ final class DiskCleaner
             }
         }
 
-        // Clean old compressed logs too
+        // 清理old compressed logs too
         foreach (glob($logDir . '/*.jsonl.gz') as $file) {
             $age = $now - filemtime($file);
             if ($age > $maxAge) {
@@ -120,7 +120,7 @@ final class DiskCleaner
     }
 
     /**
-     * Clean temporary files.
+     * 清理temporary files.
      */
     public function cleanTempFiles(): array
     {
@@ -149,7 +149,7 @@ final class DiskCleaner
     }
 
     /**
-     * Check available disk space.
+     * 检查available disk space.
      */
     public function checkDiskSpace(): array
     {
@@ -174,7 +174,7 @@ final class DiskCleaner
     }
 
     /**
-     * Get storage statistics.
+     * 获取storage statistics.
      */
     public function getStats(): array
     {
@@ -217,7 +217,7 @@ final class DiskCleaner
     }
 
     /**
-     * Get total size of a directory.
+     * 获取total size of a directory.
      */
     private function getDirectorySize(string $dir): int
     {

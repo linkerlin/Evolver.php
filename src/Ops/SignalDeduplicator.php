@@ -25,7 +25,7 @@ final class SignalDeduplicator
     }
 
     /**
-     * Check if a signal should be suppressed.
+     * 检查 a signal should be suppressed.
      * 
      * @param string $signal The signal to check
      * @param array $context Additional context for fingerprinting
@@ -40,12 +40,12 @@ final class SignalDeduplicator
             $entry = $this->signalHistory[$fingerprint];
             $age = $now - $entry['first_seen'];
             
-            // Update entry count first
+            // 更新entry count first
             $newCount = $entry['count'] + 1;
             $this->signalHistory[$fingerprint]['count'] = $newCount;
             $this->signalHistory[$fingerprint]['last_seen'] = $now;
 
-            // Check if still in suppression window
+            // 检查 still in suppression window
             if ($age < $this->suppressionWindow) {
                 return [
                     'suppress' => true,
@@ -126,7 +126,7 @@ final class SignalDeduplicator
     }
 
     /**
-     * Get a summary of suppressed signals for periodic reporting.
+     * 获取a summary of suppressed signals for periodic reporting.
      */
     public function getSuppressionSummary(int $sinceSeconds = 3600): array
     {
@@ -166,7 +166,7 @@ final class SignalDeduplicator
     }
 
     /**
-     * Get current history size.
+     * 获取current history size.
      */
     public function getHistorySize(): int
     {
@@ -174,7 +174,7 @@ final class SignalDeduplicator
     }
 
     /**
-     * Compute a fingerprint for a signal.
+     * 计算一个 fingerprint for a signal.
      */
     private function computeFingerprint(string $signal, array $context): string
     {
@@ -199,13 +199,13 @@ final class SignalDeduplicator
      */
     private function normalizeSignal(string $signal): string
     {
-        // Remove timestamps
+        // 移除timestamps
         $normalized = preg_replace('/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}/', '', $signal);
         
-        // Remove hex addresses
+        // 移除hex addresses
         $normalized = preg_replace('/0x[a-f0-9]+/i', '0xADDR', $normalized);
         
-        // Remove line numbers
+        // 移除line numbers
         $normalized = preg_replace('/:\d+/', ':LINE', $normalized);
         
         // Normalize whitespace
@@ -215,7 +215,7 @@ final class SignalDeduplicator
     }
 
     /**
-     * Clean up old entries to prevent memory growth.
+     * 清理up old entries to prevent memory growth.
      */
     private function cleanupOldEntries(): void
     {
@@ -228,7 +228,7 @@ final class SignalDeduplicator
             $this->signalHistory = array_slice($this->signalHistory, -$this->maxHistorySize, null, true);
         }
 
-        // Remove entries older than 2x suppression window
+        // 移除entries older than 2x suppression window
         $now = time();
         $maxAge = $this->suppressionWindow * 2;
         
@@ -239,7 +239,7 @@ final class SignalDeduplicator
     }
 
     /**
-     * Format duration in human-readable form.
+     * 格式化duration in human-readable form.
      */
     private function formatDuration(int $seconds): string
     {

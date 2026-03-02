@@ -29,7 +29,7 @@ final class EvoMapClient
     }
 
     /**
-     * Get Hub URL from environment.
+     * 获取Hub URL from environment.
      */
     private function getHubUrlFromEnv(): string
     {
@@ -39,7 +39,7 @@ final class EvoMapClient
     }
 
     /**
-     * Check if Hub URL is configured.
+     * 检查 Hub URL is configured.
      */
     public function isConfigured(): bool
     {
@@ -47,7 +47,7 @@ final class EvoMapClient
     }
 
     /**
-     * Get the last error message.
+     * 获取 last error message.
      */
     public function getLastError(): ?string
     {
@@ -92,7 +92,7 @@ final class EvoMapClient
         if ($result['ok']) {
             $this->heartbeatConsecutiveFailures = 0;
             
-            // Check for unknown_node response
+            // 检查for unknown_node response
             if (isset($result['response']['status']) && $result['response']['status'] === 'unknown_node') {
                 error_log('[EvoMapClient] Node not registered on hub. Re-registering...');
                 $helloResult = $this->sendHello();
@@ -237,7 +237,7 @@ final class EvoMapClient
     }
 
     /**
-     * Get heartbeat statistics.
+     * 获取heartbeat statistics.
      */
     public function getHeartbeatStats(): array
     {
@@ -251,7 +251,7 @@ final class EvoMapClient
     }
 
     /**
-     * Start heartbeat tracking.
+     * 启动heartbeat tracking.
      */
     public function startHeartbeatTracking(): void
     {
@@ -259,7 +259,7 @@ final class EvoMapClient
     }
 
     /**
-     * Get the node ID.
+     * 获取 node ID.
      */
     public function getNodeId(): string
     {

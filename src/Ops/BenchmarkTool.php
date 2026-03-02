@@ -25,7 +25,7 @@ final class BenchmarkTool
     }
 
     /**
-     * Run all benchmarks.
+     * 运行all benchmarks.
      */
     public function runAll(?\Evolver\Database $db = null): array
     {
@@ -194,7 +194,7 @@ final class BenchmarkTool
     }
 
     /**
-     * Get last results.
+     * 获取last results.
      */
     public function getResults(): array
     {
@@ -202,7 +202,7 @@ final class BenchmarkTool
     }
 
     /**
-     * Generate summary.
+     * G生成 summary.
      */
     private function generateSummary(array $benchmarks): array
     {
@@ -230,7 +230,7 @@ final class BenchmarkTool
     }
 
     /**
-     * Generate test data.
+     * G生成 test data.
      */
     private function generateTestData(): array
     {
@@ -249,7 +249,7 @@ final class BenchmarkTool
     }
 
     /**
-     * Generate test context.
+     * G生成 test context.
      */
     private function generateTestContext(): string
     {
@@ -263,7 +263,7 @@ CONTEXT;
     }
 
     /**
-     * Generate test capsule.
+     * G生成 test capsule.
      */
     private function generateTestCapsule(): array
     {

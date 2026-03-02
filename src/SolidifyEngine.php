@@ -62,7 +62,7 @@ final class SolidifyEngine
         $mutation = $input['mutation'] ?? null;
         $personalityState = $input['personalityState'] ?? null;
         $blastRadius = $input['blastRadius'] ?? ['files' => 0, 'lines' => 0];
-        $dryRun = (bool)($input['dryRun'] ?? false);
+        $dry运行= (bool)($input['dryRun'] ?? false);
         $context = $input['context'] ?? '';
         $mutationsTried = (int)($input['mutationsTried'] ?? 1);
         $totalCycles = (int)($input['totalCycles'] ?? 1);
@@ -74,7 +74,7 @@ final class SolidifyEngine
         $violations = [];
         $warnings = [];
 
-        // Check blast radius hard limits
+        // 检查blast radius hard limits
         $filesCount = (int)($blastRadius['files'] ?? 0);
         $linesCount = (int)($blastRadius['lines'] ?? 0);
         if ($filesCount > self::MAX_FILES_HARD_LIMIT) {
@@ -84,7 +84,7 @@ final class SolidifyEngine
             $violations[] = "blast_radius.lines ({$linesCount}) exceeds hard limit (" . self::MAX_LINES_HARD_LIMIT . ")";
         }
 
-        // Validate gene constraints
+        // 验证 gene constraints
         if ($gene !== null) {
             $constraints = $gene['constraints'] ?? [];
             $maxFiles = (int)($constraints['max_files'] ?? 25);
@@ -102,7 +102,7 @@ final class SolidifyEngine
             ];
         }
 
-        // Validate gene validation commands
+        // 验证 gene validation commands
         $validationResults = [];
         if ($gene !== null && !empty($gene['validation']) && !$dryRun) {
             foreach ($gene['validation'] as $cmd) {
@@ -114,7 +114,7 @@ final class SolidifyEngine
             }
         }
 
-        // Build event ID
+        // 构建event ID
         $parentEventId = $this->store->getLastEventId();
         $eventId = "evt_{$timestamp}_{$randomSuffix}";
         $mutationId = $mutation['id'] ?? "mut_{$timestamp}_{$randomSuffix}";
@@ -124,13 +124,13 @@ final class SolidifyEngine
         // Capture environment fingerprint for the event record
         $envFingerprint = EnvFingerprint::capture();
 
-        // Compute success streak if we have a gene
+        // 计算 success streak if we have a gene
         $successStreak = 0;
         if ($geneId !== null) {
             $successStreak = $this->store->computeSuccessStreak($geneId, $signals);
         }
 
-        // Build evolution event with GEP 1.6.0 fields
+        // 构建evolution event with GEP 1.6.0 fields
         $evolutionEvent = array_merge($event ?? [], [
             'type' => 'EvolutionEvent',
             'schema_version' => ContentHash::SCHEMA_VERSION,
@@ -160,10 +160,10 @@ final class SolidifyEngine
             'summary' => $summary,
         ]);
 
-        // Compute asset_id for the event
+        // 计算一个sset_id for the event
         $evolutionEvent['asset_id'] = ContentHash::computeAssetId($evolutionEvent);
 
-        // Build gene update with GEP 1.6.0 fields
+        // 构建gene update with GEP 1.6.0 fields
         $geneToStore = null;
         if ($gene !== null) {
             $geneToStore = array_merge($gene, [
@@ -174,7 +174,7 @@ final class SolidifyEngine
             ]);
         }
 
-        // Build capsule (on success) with GEP 1.6.0 fields
+        // 构建capsule (on success) with GEP 1.6.0 fields
         $capsuleToStore = null;
         if ($capsule !== null || (empty($warnings) && $intent !== 'repair')) {
             $capsuleData = $capsule ?? [];
@@ -199,12 +199,12 @@ final class SolidifyEngine
                 'created_at' => $nowIso,
             ]);
 
-            // Add content if provided or extract from context
+            // 添加content if provided or extract from context
             if (!empty($context)) {
                 $capsuleToStore['content'] = $context;
             }
 
-            // Compute asset_id for the capsule
+            // 计算一个sset_id for the capsule
             $capsuleToStore['asset_id'] = ContentHash::computeAssetId($capsuleToStore);
         }
 
@@ -212,7 +212,7 @@ final class SolidifyEngine
             // Store event
             $this->store->appendEvent($evolutionEvent);
 
-            // Update gene
+            // 更新gene
             if ($geneToStore !== null) {
                 $this->store->upsertGene($geneToStore);
             }
@@ -281,13 +281,13 @@ final class SolidifyEngine
     }
 
     /**
-     * Check if a validation command is safe to run.
+     * 检查 a validation command is safe to run.
      */
     public function isValidationCommandAllowed(string $cmd): bool
     {
         $cmd = trim($cmd);
 
-        // Check prefix whitelist
+        // 检查prefix whitelist
         $allowed = false;
         foreach (self::ALLOWED_COMMAND_PREFIXES as $prefix) {
             if (str_starts_with($cmd, $prefix . ' ') || $cmd === $prefix) {
@@ -321,7 +321,7 @@ final class SolidifyEngine
     }
 
     /**
-     * Run a validation command safely.
+     * 运行a validation command safely.
      */
     private function runValidationCommand(string $cmd): array
     {
@@ -342,7 +342,7 @@ final class SolidifyEngine
 
         fclose($pipes[0]);
 
-        // Set non-blocking
+        // 设置non-blocking
         stream_set_blocking($pipes[1], false);
         stream_set_blocking($pipes[2], false);
 
@@ -410,7 +410,7 @@ final class SolidifyEngine
     }
 
     /**
-     * Compute GDI (Genome Distribution Index) score for a capsule.
+     * 计算 GDI (Genome Distribution Index) score for a capsule.
      * Higher score = better quality asset.
      */
     public function computeGdiScore(array $capsule): float
@@ -418,8 +418,8 @@ final class SolidifyEngine
         $score = 0.0;
         
         // Base score from outcome
-        $outcomeScore = (float)($capsule['outcome']['score'] ?? 0.5);
-        $score += $outcomeScore * 0.4;
+        $outcome评分= (float)($capsule['outcome']['score'] ?? 0.5);
+        $score += $outcome评分* 0.4;
         
         // Confidence factor
         $confidence = (float)($capsule['confidence'] ?? 0.5);

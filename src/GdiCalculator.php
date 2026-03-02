@@ -26,8 +26,8 @@ final class GdiCalculator
     {
         $score = 0.0;
 
-        $outcomeScore = (float)($capsule['outcome']['score'] ?? $capsule['outcome_score'] ?? 0.5);
-        $score += $outcomeScore * self::WEIGHT_OUTCOME;
+        $outcome评分= (float)($capsule['outcome']['score'] ?? $capsule['outcome_score'] ?? 0.5);
+        $score += $outcome评分* self::WEIGHT_OUTCOME;
 
         $confidence = (float)($capsule['confidence'] ?? 0.5);
         $score += $confidence * self::WEIGHT_CONFIDENCE;
@@ -119,7 +119,7 @@ final class GdiCalculator
     }
 
     /**
-     * Add GDI scores to capsules (in-place).
+     * 添加GDI scores to capsules (in-place).
      */
     public function annotateCapsulesWithGdi(array &$capsules): void
     {
@@ -129,7 +129,7 @@ final class GdiCalculator
     }
 
     /**
-     * Add GDI scores to genes (in-place).
+     * 添加GDI scores to genes (in-place).
      */
     public function annotateGenesWithGdi(array &$genes, array $capsulesMap = []): void
     {
@@ -139,7 +139,7 @@ final class GdiCalculator
     }
 
     /**
-     * Get top N capsules by GDI.
+     * 获取top N capsules by GDI.
      */
     public function getTopCapsules(array $capsules, int $limit = 10): array
     {
@@ -148,7 +148,7 @@ final class GdiCalculator
     }
 
     /**
-     * Get top N genes by GDI.
+     * 获取top N genes by GDI.
      */
     public function getTopGenes(array $genes, array $capsulesMap = [], int $limit = 10): array
     {
@@ -157,7 +157,7 @@ final class GdiCalculator
     }
 
     /**
-     * Compute success rate from capsules.
+     * 计算 success rate from capsules.
      */
     private function computeSuccessRate(array $capsules): float
     {
@@ -177,7 +177,7 @@ final class GdiCalculator
     }
 
     /**
-     * Compute average success streak from capsules.
+     * 计算一个verage success streak from capsules.
      */
     private function computeAverageStreak(array $capsules): float
     {
@@ -194,7 +194,7 @@ final class GdiCalculator
     }
 
     /**
-     * Get GDI score category.
+     * 获取GDI score category.
      */
     public function getGdiCategory(float $gdi): string
     {
@@ -214,7 +214,7 @@ final class GdiCalculator
     }
 
     /**
-     * Get GDI statistics for a collection.
+     * 获取GDI statistics for a collection.
      */
     public function getGdiStats(array $capsules): array
     {

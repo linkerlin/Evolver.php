@@ -31,7 +31,7 @@ final class DaemonManager
     }
 
     /**
-     * Start daemon in background.
+     * 启动daemon in background.
      */
     public function start(array $options = []): array
     {
@@ -87,7 +87,7 @@ final class DaemonManager
     }
 
     /**
-     * Build the start command.
+     * 构建the start command.
      */
     private function buildStartCommand(int $interval, bool $reviewMode, string $strategy): string
     {
@@ -113,7 +113,7 @@ final class DaemonManager
     }
 
     /**
-     * Stop daemon gracefully.
+     * 停止daemon gracefully.
      */
     public function stop(): array
     {
@@ -158,7 +158,7 @@ final class DaemonManager
     }
 
     /**
-     * Check if daemon is running.
+     * 检查 daemon is running.
      */
     public function isRunning(): bool
     {
@@ -171,7 +171,7 @@ final class DaemonManager
     }
 
     /**
-     * Get daemon PID.
+     * 获取daemon PID.
      */
     public function getPid(): ?int
     {
@@ -184,7 +184,7 @@ final class DaemonManager
     }
 
     /**
-     * Get daemon status.
+     * 获取daemon status.
      */
     public function getStatus(): array
     {
@@ -207,7 +207,7 @@ final class DaemonManager
     }
 
     /**
-     * Get process uptime.
+     * 获取process uptime.
      */
     private function getUptime(int $pid): int
     {
@@ -220,7 +220,7 @@ final class DaemonManager
     }
 
     /**
-     * Get memory usage in MB.
+     * 获取memory usage in MB.
      */
     private function getMemoryUsage(int $pid): float
     {
@@ -238,7 +238,7 @@ final class DaemonManager
     }
 
     /**
-     * Get log contents.
+     * 获取log contents.
      */
     public function getLog(int $lines = 50): array
     {
@@ -264,7 +264,7 @@ final class DaemonManager
     }
 
     /**
-     * Remove PID file.
+     * 移除PID file.
      */
     public function removePidFile(): bool
     {

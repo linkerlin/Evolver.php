@@ -47,7 +47,7 @@ final class McpServer
         $this->promptBuilder = new PromptBuilder();
         $this->solidifyEngine = new SolidifyEngine($this->store, $this->signalExtractor, $this->geneSelector);
         
-        // Initialize safety and protection
+        // 初始化 safety and protection
         $this->sourceProtector = new SourceProtector();
         $this->safetyController = SafetyController::fromEnvironment($this->sourceProtector);
         
@@ -58,7 +58,7 @@ final class McpServer
             $this->safetyController = new SafetyController('review', $this->sourceProtector);
         }
         
-        // Initialize optional components
+        // 初始化 optional components
         $this->evoMapClient = new EvoMapClient();
         $this->lifecycleManager = new LifecycleManager();
         $this->diskCleaner = new DiskCleaner();
@@ -72,7 +72,7 @@ final class McpServer
     }
 
     /**
-     * Check if running in review mode.
+     * 检查 running in review mode.
      */
     public function isReviewMode(): bool
     {
@@ -99,7 +99,7 @@ final class McpServer
     }
 
     /**
-     * Run the MCP server, reading from stdin and writing to stdout.
+     * 运行the MCP server, reading from stdin and writing to stdout.
      */
     public function run(): void
     {
@@ -168,7 +168,7 @@ final class McpServer
     private function dispatch(string $method, array $params, mixed $id): mixed
     {
         return match ($method) {
-            'initialize' => $this->handleInitialize($params),
+            'initialize' => $this->handle初始化($params),
             'initialized' => null, // notification, no response
             'tools/list' => $this->handleToolsList(),
             'tools/call' => $this->handleToolsCall($params),
@@ -180,7 +180,7 @@ final class McpServer
         };
     }
 
-    private function handleInitialize(array $params): array
+    private function handle初始化(array $params): array
     {
         $this->initialized = true;
 
@@ -273,7 +273,7 @@ final class McpServer
             ];
         }
 
-        // Build MCP-compliant response
+        // 构建MCP-compliant response
         // Note: Some clients expect specific fields, so we include both standard and extended formats
         $response = [
             'content' => [
@@ -284,7 +284,7 @@ final class McpServer
             ],
         ];
         
-        // Add isError flag if result indicates error
+        // 添加isError flag if result indicates error
         if (is_array($result) && isset($result['ok']) && $result['ok'] === false) {
             $response['isError'] = true;
         }
@@ -298,7 +298,7 @@ final class McpServer
 
     private function toolEvolverRun(array $args): array
     {
-        // Check safety mode
+        // 检查safety mode
         if (!$this->safetyController->isOperationAllowed('propose')) {
             return [
                 'ok' => false,
@@ -328,7 +328,7 @@ final class McpServer
             }
         }
 
-        // Load assets
+        // 加载assets
         $genes = $this->store->loadGenes();
         $capsules = $this->store->loadCapsules(50);
         $recentEvents = $this->store->loadRecentEvents(20);
@@ -356,7 +356,7 @@ final class McpServer
             $signals[] = 'harden';
         }
 
-        // Select gene and capsule
+        // 选择gene and capsule
         $selection = $this->geneSelector->selectGeneAndCapsule([
             'genes' => $genes,
             'capsules' => $capsules,
@@ -369,7 +369,7 @@ final class McpServer
         $capsuleCandidates = $selection['capsuleCandidates'];
         $selector = $selection['selector'];
 
-        // Build prompt
+        // 构建prompt
         $parentEventId = $this->store->getLastEventId();
         $nowIso = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
 
@@ -418,7 +418,7 @@ final class McpServer
 
     private function toolEvolverSolidify(array $args): array
     {
-        // Check if running in review mode - require human approval
+        // 检查 running in review mode - require human approval
         if ($this->reviewMode) {
             $blastRadius = $args['blastRadius'] ?? ['files' => 0, 'lines' => 0];
             $files = $args['modifiedFiles'] ?? [];
@@ -440,11 +440,11 @@ final class McpServer
             ];
         }
 
-        // Check safety mode for modifications
+        // 检查safety mode for modifications
         $blastRadius = $args['blastRadius'] ?? ['files' => 0, 'lines' => 0];
         $files = $args['modifiedFiles'] ?? [];
         
-        $modificationCheck = $this->safetyController->validateModification([
+        $modification检查= $this->safetyController->validateModification([
             'files' => $files,
             'lines' => $blastRadius['lines'] ?? 0,
             'gene' => $args['gene'] ?? null,
@@ -468,7 +468,7 @@ final class McpServer
         $eventData = $args['event'] ?? null;
         $mutationData = $args['mutation'] ?? null;
         $personalityState = $args['personalityState'] ?? null;
-        $dryRun = (bool)($args['dryRun'] ?? false);
+        $dry运行= (bool)($args['dryRun'] ?? false);
         $gepOutput = $args['gepOutput'] ?? null;
 
         // Handle approval/rejection in review mode
@@ -597,7 +597,7 @@ final class McpServer
 
     private function toolEvolverUpsertGene(array $args): array
     {
-        // Check if modification is allowed
+        // 检查 modification is allowed
         if (!$this->safetyController->isOperationAllowed('modify')) {
             return [
                 'ok' => false,
@@ -613,7 +613,7 @@ final class McpServer
 
         $gene['type'] = 'Gene';
         
-        // Compute asset_id if not present
+        // 计算一个sset_id if not present
         if (!isset($gene['asset_id'])) {
             $gene['asset_id'] = ContentHash::computeAssetId($gene);
         }
@@ -699,7 +699,7 @@ final class McpServer
         if (!$this->evoMapClient || !$this->evoMapClient->isConfigured()) {
             return [
                 'ok' => false,
-                'error' => 'EvoMap Hub not configured. Set A2A_HUB_URL environment variable.',
+                'error' => 'EvoMap Hub not configured. 设置A2A_HUB_URL environment variable.',
             ];
         }
 
@@ -985,7 +985,7 @@ final class McpServer
                 'Output RAW JSON ONLY — no markdown code blocks',
                 'Output separate JSON objects — DO NOT wrap in a single array',
                 'Missing any object = PROTOCOL FAILURE',
-                'Validate JSON syntax before output',
+                '验证 JSON syntax before output',
                 'Objects must appear in order: Mutation → PersonalityState → EvolutionEvent → Gene → Capsule',
             ],
             'safety' => [
@@ -1038,7 +1038,7 @@ final class McpServer
         return [
             [
                 'name' => 'evolver_run',
-                'description' => '🧬 Run an evolution cycle: extract signals from context, select best Gene/Capsule, and generate a GEP protocol prompt to guide safe evolution. Returns signals, selected gene, and the full GEP prompt.',
+                'description' => '🧬 运行an evolution cycle: extract signals from context, select best Gene/Capsule, and generate a GEP protocol prompt to guide safe evolution. Returns signals, selected gene, and the full GEP prompt.',
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => [
@@ -1189,7 +1189,7 @@ final class McpServer
             ],
             [
                 'name' => 'evolver_upsert_gene',
-                'description' => '🧬 Create or update a Gene in the store. Use this to save a new Gene discovered during evolution.',
+                'description' => '🧬 创建or update a Gene in the store. Use this to save a new Gene discovered during evolution.',
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => [
@@ -1204,7 +1204,7 @@ final class McpServer
             ],
             [
                 'name' => 'evolver_delete_gene',
-                'description' => '🗑️ Delete a Gene from the store by its ID. Use with care — this permanently removes the Gene.',
+                'description' => '🗑️ 删除a Gene from the store by its ID. Use with care — this permanently removes the Gene.',
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => [
@@ -1218,7 +1218,7 @@ final class McpServer
             ],
             [
                 'name' => 'evolver_stats',
-                'description' => '📊 Get statistics about the evolution store (gene count, capsule count, event count).',
+                'description' => '📊 获取statistics about the evolution store (gene count, capsule count, event count).',
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => new \stdClass(),
@@ -1227,7 +1227,7 @@ final class McpServer
             ],
             [
                 'name' => 'evolver_safety_status',
-                'description' => '🛡️ Get current safety status including self-modification mode and source protection.',
+                'description' => '🛡️ 获取current safety status including self-modification mode and source protection.',
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => new \stdClass(),
@@ -1236,7 +1236,7 @@ final class McpServer
             ],
             [
                 'name' => 'evolver_cleanup',
-                'description' => '🧹 Run cleanup operations: archive old events, compress logs, remove temp files.',
+                'description' => '🧹 运行cleanup operations: archive old events, compress logs, remove temp files.',
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => new \stdClass(),

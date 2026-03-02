@@ -6,7 +6,7 @@ namespace Evolver;
 
 /**
  * GEP Protocol Validator.
- * Validates GEP (Gene Expression Protocol) output format compliance.
+ * 验证s GEP (Gene Expression Protocol) output format compliance.
  */
 final class GepValidator
 {
@@ -17,7 +17,7 @@ final class GepValidator
     private const REQUIRED_FIELDS_CAPSULE = ['type', 'id', 'trigger', 'gene', 'summary', 'confidence', 'blast_radius'];
 
     /**
-     * Validate GEP output (5 objects in order).
+     * 验证 GEP output (5 objects in order).
      */
     public function validateGepOutput(string $output): array
     {
@@ -36,7 +36,7 @@ final class GepValidator
             return $result;
         }
 
-        // Validate each object in order
+        // 验证 each object in order
         $validationResults = [
             $this->validateMutation($objects[0]),
             $this->validatePersonalityState($objects[1]),
@@ -108,7 +108,7 @@ final class GepValidator
     }
 
     /**
-     * Validate Mutation object.
+     * 验证 Mutation object.
      */
     public function validateMutation(array $obj): array
     {
@@ -116,7 +116,7 @@ final class GepValidator
     }
 
     /**
-     * Validate PersonalityState object.
+     * 验证 PersonalityState object.
      */
     public function validatePersonalityState(array $obj): array
     {
@@ -140,7 +140,7 @@ final class GepValidator
     }
 
     /**
-     * Validate EvolutionEvent object.
+     * 验证 EvolutionEvent object.
      */
     public function validateEvolutionEvent(array $obj): array
     {
@@ -149,7 +149,7 @@ final class GepValidator
         if ($result['valid']) {
             $warnings = $result['warnings'] ?? [];
 
-            // Validate blast_radius
+            // 验证 blast_radius
             $blastRadius = $obj['blast_radius'] ?? [];
             if (isset($blastRadius['files']) && $blastRadius['files'] > 60) {
                 $warnings[] = 'blast_radius.files exceeds recommended limit of 60';
@@ -165,7 +165,7 @@ final class GepValidator
     }
 
     /**
-     * Validate Gene object.
+     * 验证 Gene object.
      */
     public function validateGene(array $obj): array
     {
@@ -174,12 +174,12 @@ final class GepValidator
         if ($result['valid']) {
             $warnings = $result['warnings'] ?? [];
 
-            // Check for asset_id
+            // 检查for asset_id
             if (!isset($obj['asset_id'])) {
                 $warnings[] = 'Gene should have asset_id for content-addressable storage';
             }
 
-            // Check for constraints
+            // 检查for constraints
             if (!isset($obj['constraints'])) {
                 $warnings[] = 'Gene should have constraints for safety';
             }
@@ -191,7 +191,7 @@ final class GepValidator
     }
 
     /**
-     * Validate Capsule object.
+     * 验证 Capsule object.
      */
     public function validateCapsule(array $obj): array
     {
@@ -200,7 +200,7 @@ final class GepValidator
         if ($result['valid']) {
             $warnings = $result['warnings'] ?? [];
 
-            // Check confidence range
+            // 检查confidence range
             if (isset($obj['confidence'])) {
                 $confidence = $obj['confidence'];
                 if ($confidence < 0 || $confidence > 1) {
@@ -208,12 +208,12 @@ final class GepValidator
                 }
             }
 
-            // Check for outcome
+            // 检查for outcome
             if (!isset($obj['outcome'])) {
                 $warnings[] = 'Capsule should have outcome for validation';
             }
 
-            // Check for asset_id
+            // 检查for asset_id
             if (!isset($obj['asset_id'])) {
                 $warnings[] = 'Capsule should have asset_id for content-addressable storage';
             }
@@ -225,7 +225,7 @@ final class GepValidator
     }
 
     /**
-     * Validate a GEP object against required fields.
+     * 验证 a GEP object against required fields.
      */
     private function validateObject(array $obj, string $expectedType, array $requiredFields): array
     {
@@ -235,14 +235,14 @@ final class GepValidator
             'warnings' => [],
         ];
 
-        // Check type
+        // 检查type
         if (!isset($obj['type']) || $obj['type'] !== $expectedType) {
             $result['valid'] = false;
             $result['errors'][] = "Expected type '{$expectedType}', got '" . ($obj['type'] ?? 'missing') . "'";
             return $result;
         }
 
-        // Check required fields
+        // 检查required fields
         foreach ($requiredFields as $field) {
             if (!isset($obj[$field])) {
                 $result['valid'] = false;
@@ -254,7 +254,7 @@ final class GepValidator
     }
 
     /**
-     * Validate asset_id computation.
+     * 验证 asset_id computation.
      */
     public function validateAssetId(array $obj): array
     {
@@ -284,7 +284,7 @@ final class GepValidator
     }
 
     /**
-     * Get validation summary.
+     * 获取validation summary.
      */
     public function getSummary(array $result): string
     {

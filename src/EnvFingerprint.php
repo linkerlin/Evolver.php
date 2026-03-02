@@ -75,7 +75,7 @@ final class EnvFingerprint
     }
 
     /**
-     * Compute a short fingerprint key for comparison and grouping.
+     * 计算一个 short fingerprint key for comparison and grouping.
      *
      * Two nodes with the same key are considered "same environment class".
      * Returns a 16-char hex string.
@@ -100,7 +100,7 @@ final class EnvFingerprint
     }
 
     /**
-     * Check if two fingerprints are from the same environment class.
+     * 检查 two fingerprints are from the same environment class.
      */
     public static function isSameEnvClass(array $fpA, array $fpB): bool
     {
@@ -112,7 +112,7 @@ final class EnvFingerprint
     // -------------------------------------------------------------------------
 
     /**
-     * Get or generate a stable device ID.
+     * 获取或 generate a stable device ID.
      *
      * Priority chain:
      *   1. EVOMAP_DEVICE_ID env var
@@ -155,7 +155,7 @@ final class EnvFingerprint
             return $stored;
         }
 
-        // Generate a new ID from hardware
+        // G生成一个 new ID from hardware
         $id = self::generateDeviceId();
 
         // Persist it
@@ -253,7 +253,7 @@ final class EnvFingerprint
     }
 
     /**
-     * Get non-loopback MAC addresses, sorted for stability.
+     * 获取non-loopback MAC addresses, sorted for stability.
      */
     private static function getMacAddresses(): array
     {

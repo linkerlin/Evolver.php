@@ -27,7 +27,7 @@ final class GepA2AProtocol
     private ?string $cachedNodeId = null;
 
     /**
-     * Generate a unique message ID.
+     * G生成一个 unique message ID.
      */
     public static function generateMessageId(): string
     {
@@ -35,7 +35,7 @@ final class GepA2AProtocol
     }
 
     /**
-     * Get or generate a stable node ID.
+     * 获取或 generate a stable node ID.
      * The node ID is derived from device ID, agent name, and current working directory.
      */
     public function getNodeId(): string
@@ -64,7 +64,7 @@ final class GepA2AProtocol
     }
 
     /**
-     * Build a base protocol message.
+     * 构建a base protocol message.
      */
     public function buildMessage(string $messageType, array $payload = [], ?string $senderId = null): array
     {
@@ -86,7 +86,7 @@ final class GepA2AProtocol
     }
 
     /**
-     * Build a hello message for node registration.
+     * 构建a hello message for node registration.
      */
     public function buildHello(array $opts = []): array
     {
@@ -110,7 +110,7 @@ final class GepA2AProtocol
     }
 
     /**
-     * Build a publish message for a single asset.
+     * 构建a publish message for a single asset.
      */
     public function buildPublish(array $asset, ?string $nodeId = null): array
     {
@@ -118,7 +118,7 @@ final class GepA2AProtocol
             throw new \InvalidArgumentException('publish: asset must have type and id');
         }
 
-        // Generate signature: HMAC-SHA256 of asset_id with node secret
+        // G生成 signature: HMAC-SHA256 of asset_id with node secret
         $assetId = $asset['asset_id'] ?? ContentHash::computeAssetId($asset);
         $nodeSecret = getenv('A2A_NODE_SECRET') ?: $this->getNodeId();
         $signature = hash_hmac('sha256', $assetId, $nodeSecret);
@@ -135,7 +135,7 @@ final class GepA2AProtocol
     }
 
     /**
-     * Build a bundle publish message containing Gene + Capsule (+ optional EvolutionEvent).
+     * 构建a bundle publish message containing Gene + Capsule (+ optional EvolutionEvent).
      * Hub requires payload.assets = [Gene, Capsule] since bundle enforcement was added.
      */
     public function buildPublishBundle(array $gene, array $capsule, ?array $event = null, array $opts = []): array
@@ -172,7 +172,7 @@ final class GepA2AProtocol
     }
 
     /**
-     * Build a fetch message for requesting assets.
+     * 构建a fetch message for requesting assets.
      */
     public function buildFetch(array $opts = []): array
     {
@@ -183,14 +183,14 @@ final class GepA2AProtocol
             'signals' => $opts['signals'] ?? null,
         ];
 
-        // Remove null values
+        // 移除null values
         $payload = array_filter($payload, fn($v) => $v !== null);
 
         return $this->buildMessage('fetch', $payload, $opts['nodeId'] ?? null);
     }
 
     /**
-     * Build a report message for validation results.
+     * 构建a report message for validation results.
      */
     public function buildReport(array $opts): array
     {
@@ -204,7 +204,7 @@ final class GepA2AProtocol
     }
 
     /**
-     * Build a decision message for asset acceptance/rejection.
+     * 构建a decision message for asset acceptance/rejection.
      */
     public function buildDecision(string $decision, array $opts): array
     {
@@ -224,7 +224,7 @@ final class GepA2AProtocol
     }
 
     /**
-     * Build a revoke message for withdrawing assets.
+     * 构建a revoke message for withdrawing assets.
      */
     public function buildRevoke(array $opts): array
     {
@@ -238,7 +238,7 @@ final class GepA2AProtocol
     }
 
     /**
-     * Validate a protocol message.
+     * 验证 a protocol message.
      */
     public static function isValidProtocolMessage(array $msg): bool
     {
@@ -288,7 +288,7 @@ final class GepA2AProtocol
     }
 
     /**
-     * Build a heartbeat message.
+     * 构建a heartbeat message.
      */
     public function buildHeartbeat(int $uptimeMs = 0): array
     {

@@ -24,7 +24,7 @@ final class GepAssetStore
      */
     private function migrateSchema(): void
     {
-        // Check if we need to add asset_id column to genes table
+        // 检查 we need to add asset_id column to genes table
         $columns = $this->db->fetchAll("PRAGMA table_info(genes)");
         $hasAssetId = false;
         $hasSchemaVersion = false;
@@ -42,7 +42,7 @@ final class GepAssetStore
             $this->db->exec('ALTER TABLE genes ADD COLUMN schema_version TEXT DEFAULT "1.5.0"');
         }
 
-        // Check capsules table
+        // 检查capsules table
         $columns = $this->db->fetchAll("PRAGMA table_info(capsules)");
         $hasAssetId = false;
         $hasOutcome = false;
@@ -79,7 +79,7 @@ final class GepAssetStore
             $this->db->exec('ALTER TABLE capsules ADD COLUMN content TEXT');
         }
 
-        // Check events table for new columns
+        // 检查events table for new columns
         $columns = $this->db->fetchAll("PRAGMA table_info(events)");
         $hasEnvFingerprint = false;
         $hasMutationsTried = false;
@@ -102,7 +102,7 @@ final class GepAssetStore
             $this->db->exec('ALTER TABLE events ADD COLUMN total_cycles INTEGER DEFAULT 1');
         }
 
-        // Create sync_status table for network synchronization
+        // 创建sync_status table for network synchronization
         $this->db->exec(<<<'SQL'
             CREATE TABLE IF NOT EXISTS sync_status (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -129,7 +129,7 @@ final class GepAssetStore
         $id = $gene['id'] ?? throw new \InvalidArgumentException('Gene must have an id');
         $category = $gene['category'] ?? 'repair';
         
-        // Compute asset_id if not present
+        // 计算一个sset_id if not present
         if (!isset($gene['asset_id'])) {
             $gene['asset_id'] = ContentHash::computeAssetId($gene);
         }
@@ -202,7 +202,7 @@ final class GepAssetStore
         $id = $capsule['id'] ?? ContentHash::generateLocalId('capsule');
         $capsule['id'] = $id;
         
-        // Compute asset_id if not present
+        // 计算一个sset_id if not present
         if (!isset($capsule['asset_id'])) {
             $capsule['asset_id'] = ContentHash::computeAssetId($capsule);
         }
@@ -211,7 +211,7 @@ final class GepAssetStore
         $geneId = $capsule['gene'] ?? null;
         $confidence = (float)($capsule['confidence'] ?? 0.5);
         $outcomeStatus = $capsule['outcome']['status'] ?? 'success';
-        $outcomeScore = (float)($capsule['outcome']['score'] ?? 0.5);
+        $outcome评分= (float)($capsule['outcome']['score'] ?? 0.5);
         $successStreak = (int)($capsule['success_streak'] ?? 0);
         $content = $capsule['content'] ?? null;
         $envFingerprint = isset($capsule['env_fingerprint']) 
@@ -269,7 +269,7 @@ final class GepAssetStore
     }
 
     /**
-     * Load capsules sorted by GDI score.
+     * 加载capsules sorted by GDI score.
      */
     public function loadCapsulesByGdi(int $limit = 100, bool $descending = true): array
     {
@@ -290,7 +290,7 @@ final class GepAssetStore
     }
 
     /**
-     * Load top capsules by GDI score.
+     * 加载top capsules by GDI score.
      */
     public function loadTopCapsules(int $limit = 10): array
     {
@@ -298,7 +298,7 @@ final class GepAssetStore
     }
 
     /**
-     * Load capsules filtered by minimum GDI score.
+     * 加载capsules filtered by minimum GDI score.
      */
     public function loadCapsulesByMinGdi(float $minGdi, int $limit = 100): array
     {
@@ -319,7 +319,7 @@ final class GepAssetStore
     }
 
     /**
-     * Get GDI statistics for all capsules.
+     * 获取GDI statistics for all capsules.
      */
     public function getCapsulesGdiStats(): array
     {
@@ -329,7 +329,7 @@ final class GepAssetStore
     }
 
     /**
-     * Compute success streak for a gene based on historical capsules.
+     * 计算 success streak for a gene based on historical capsules.
      */
     public function computeSuccessStreak(string $geneId, array $signals = []): int
     {
@@ -360,7 +360,7 @@ final class GepAssetStore
         $id = $event['id'] ?? ContentHash::generateLocalId('evt');
         $event['id'] = $id;
         
-        // Compute asset_id for the event if not present
+        // 计算一个sset_id for the event if not present
         if (!isset($event['asset_id'])) {
             $event['asset_id'] = ContentHash::computeAssetId($event);
         }
@@ -369,7 +369,7 @@ final class GepAssetStore
         $signals = json_encode($event['signals'] ?? [], JSON_UNESCAPED_UNICODE);
         $genesUsed = json_encode($event['genes_used'] ?? [], JSON_UNESCAPED_UNICODE);
         $outcomeStatus = $event['outcome']['status'] ?? 'success';
-        $outcomeScore = (float)($event['outcome']['score'] ?? 0.5);
+        $outcome评分= (float)($event['outcome']['score'] ?? 0.5);
         $mutationsTried = (int)($event['mutations_tried'] ?? 1);
         $totalCycles = (int)($event['total_cycles'] ?? 1);
         $envFingerprint = isset($event['env_fingerprint']) 
@@ -522,7 +522,7 @@ final class GepAssetStore
 
         foreach ($genes as $gene) {
             if (is_array($gene) && isset($gene['id'])) {
-                // Update to new schema version and compute asset_id
+                // 更新to new schema version and compute asset_id
                 $gene['schema_version'] = ContentHash::SCHEMA_VERSION;
                 $gene['asset_id'] = ContentHash::computeAssetId($gene);
                 $this->upsertGene($gene);

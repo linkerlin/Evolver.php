@@ -179,7 +179,7 @@ final class SignalExtractor
                 $signals[] = 'signal_oscillation_detected';
             }
 
-            // Remove suppressed signals (appeared too frequently without resolution)
+            // 移除suppressed signals (appeared too frequently without resolution)
             $signals = array_filter($signals, function ($s) use ($history) {
                 $key = str_starts_with($s, 'errsig:') ? 'errsig' :
                     (str_starts_with($s, 'recurring_errsig') ? 'recurring_errsig' : $s);
@@ -255,7 +255,7 @@ final class SignalExtractor
             }
         }
 
-        // Build suppressed signals set (appeared 3+ times in last 8 events)
+        // 构建suppressed signals set (appeared 3+ times in last 8 events)
         $suppressedSignalsArray = [];
         foreach ($signalFreq as $sig => $count) {
             if ($count >= 3) {
@@ -359,7 +359,7 @@ final class SignalExtractor
     }
 
     /**
-     * Check if any opportunity signal is present.
+     * 检查 any opportunity signal is present.
      */
     public function hasOpportunitySignal(array $signals): bool
     {
@@ -372,7 +372,7 @@ final class SignalExtractor
     }
 
     /**
-     * Get repair loop detection thresholds for external use.
+     * 获取repair loop detection thresholds for external use.
      */
     public static function getThresholds(): array
     {

@@ -46,7 +46,7 @@ final class StructuredLogger
     }
 
     /**
-     * Initialize log directory and files.
+     * 初始化 log directory and files.
      */
     private function initialize(): void
     {
@@ -62,7 +62,7 @@ final class StructuredLogger
     }
 
     /**
-     * Check if a log level should be logged.
+     * 检查 a log level should be logged.
      */
     private function shouldLog(string $level): bool
     {
@@ -160,7 +160,7 @@ final class StructuredLogger
     }
 
     /**
-     * Check and rotate main log file.
+     * 检查and rotate main log file.
      */
     private function checkRotation(): void
     {
@@ -174,7 +174,7 @@ final class StructuredLogger
     }
 
     /**
-     * Check and rotate evolution log file.
+     * 检查and rotate evolution log file.
      */
     private function checkEvolutionRotation(): void
     {
@@ -192,7 +192,7 @@ final class StructuredLogger
      */
     private function rotate(string $logFile): void
     {
-        // Remove oldest file if we have too many
+        // 移除oldest file if we have too many
         $pattern = $logFile . '.*';
         $files = glob($pattern);
         if (count($files) >= $this->maxFiles) {
@@ -235,7 +235,7 @@ final class StructuredLogger
     }
 
     /**
-     * Get log file paths.
+     * 获取log file paths.
      */
     public function getLogFiles(): array
     {
@@ -246,7 +246,7 @@ final class StructuredLogger
     }
 
     /**
-     * Clean old log files.
+     * 清理old log files.
      */
     public function cleanOldLogs(int $maxAgeDays = 30): int
     {
@@ -270,7 +270,7 @@ final class StructuredLogger
     }
 
     /**
-     * Get current log size.
+     * 获取current log size.
      */
     public function getLogSize(): array
     {

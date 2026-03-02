@@ -131,7 +131,7 @@ final class SecurityAuditLogger
     }
 
     /**
-     * Get recent audit logs.
+     * 获取recent audit logs.
      */
     public function getRecentLogs(int $limit = 100): array
     {
@@ -176,7 +176,7 @@ final class SecurityAuditLogger
     }
 
     /**
-     * Get audit statistics.
+     * 获取audit statistics.
      */
     public function getStats(): array
     {
@@ -262,7 +262,7 @@ final class SecurityAuditLogger
     }
 
     /**
-     * Check if audit logging is enabled.
+     * 检查 audit logging is enabled.
      */
     public function isEnabled(): bool
     {

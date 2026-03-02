@@ -114,7 +114,7 @@ final class StrategyConfig
     }
 
     /**
-     * Get default config file path.
+     * 获取default config file path.
      */
     private function getDefaultConfigPath(): string
     {
@@ -126,7 +126,7 @@ final class StrategyConfig
     }
 
     /**
-     * Load configuration from file.
+     * 加载configuration from file.
      */
     public function load(): void
     {
@@ -146,7 +146,7 @@ final class StrategyConfig
     }
 
     /**
-     * Save configuration to file.
+     * 保存configuration to file.
      */
     public function save(): bool
     {
@@ -162,7 +162,7 @@ final class StrategyConfig
     }
 
     /**
-     * Get current strategy name.
+     * 获取current strategy name.
      */
     public function getStrategy(): string
     {
@@ -170,7 +170,7 @@ final class StrategyConfig
     }
 
     /**
-     * Set strategy by name.
+     * 设置strategy by name.
      */
     public function setStrategy(string $strategy): void
     {
@@ -183,7 +183,7 @@ final class StrategyConfig
     }
 
     /**
-     * Get mutation weight.
+     * 获取mutation weight.
      */
     public function getMutationWeight(string $type): float
     {
@@ -191,7 +191,7 @@ final class StrategyConfig
     }
 
     /**
-     * Get all mutation weights.
+     * 获取all mutation weights.
      */
     public function getMutationWeights(): array
     {
@@ -199,7 +199,7 @@ final class StrategyConfig
     }
 
     /**
-     * Set mutation weight.
+     * 设置mutation weight.
      */
     public function setMutationWeight(string $type, float $weight): void
     {
@@ -211,7 +211,7 @@ final class StrategyConfig
     }
 
     /**
-     * Get quality gate threshold.
+     * 获取quality gate threshold.
      */
     public function getQualityGate(string $gate): float
     {
@@ -219,7 +219,7 @@ final class StrategyConfig
     }
 
     /**
-     * Get all quality gates.
+     * 获取all quality gates.
      */
     public function getQualityGates(): array
     {
@@ -227,7 +227,7 @@ final class StrategyConfig
     }
 
     /**
-     * Set quality gate threshold.
+     * 设置quality gate threshold.
      */
     public function setQualityGate(string $gate, float $value): void
     {
@@ -239,7 +239,7 @@ final class StrategyConfig
     }
 
     /**
-     * Get cooldown configuration.
+     * 获取cooldown configuration.
      */
     public function getCooldown(string $key = null): mixed
     {
@@ -250,7 +250,7 @@ final class StrategyConfig
     }
 
     /**
-     * Get blast radius configuration.
+     * 获取blast radius configuration.
      */
     public function getBlastRadius(string $key = null): mixed
     {
@@ -261,7 +261,7 @@ final class StrategyConfig
     }
 
     /**
-     * Get gene selection configuration.
+     * 获取gene selection configuration.
      */
     public function getGeneSelection(string $key = null): mixed
     {
@@ -272,7 +272,7 @@ final class StrategyConfig
     }
 
     /**
-     * Get safety configuration.
+     * 获取safety configuration.
      */
     public function getSafety(string $key = null): mixed
     {
@@ -283,7 +283,7 @@ final class StrategyConfig
     }
 
     /**
-     * Check if mutation passes quality gates.
+     * 检查 mutation passes quality gates.
      */
     public function passesQualityGates(array $mutation): array
     {
@@ -306,7 +306,7 @@ final class StrategyConfig
     }
 
     /**
-     * Get available strategy presets.
+     * 获取available strategy presets.
      */
     public static function getAvailableStrategies(): array
     {
@@ -314,7 +314,7 @@ final class StrategyConfig
     }
 
     /**
-     * Get full configuration.
+     * 获取full configuration.
      */
     public function getConfig(): array
     {
@@ -322,7 +322,7 @@ final class StrategyConfig
     }
 
     /**
-     * Set configuration value.
+     * 设置configuration value.
      */
     public function set(string $key, mixed $value): void
     {
@@ -340,7 +340,7 @@ final class StrategyConfig
     }
 
     /**
-     * Get configuration value.
+     * 获取configuration value.
      */
     public function get(string $key, mixed $default = null): mixed
     {
@@ -358,7 +358,7 @@ final class StrategyConfig
     }
 
     /**
-     * Create config from environment variables.
+     * 创建config from environment variables.
      */
     public static function fromEnvironment(): self
     {

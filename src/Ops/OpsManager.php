@@ -20,7 +20,7 @@ final class OpsManager
     }
 
     /**
-     * Run an ops command.
+     * 运行an ops command.
      *
      * @param string $command The command to run
      * @param array $opts Command options
@@ -45,8 +45,8 @@ final class OpsManager
     public function listCommands(): array
     {
         return [
-            'cleanup' => 'Clean old logs, temp files, and archive data',
-            'health' => 'Check system health status',
+            'cleanup' => '清理old logs, temp files, and archive data',
+            'health' => '检查system health status',
             'stats' => 'Display storage and system statistics',
             'gc' => 'Garbage collect old capsules and events',
             'dedupe' => 'Show signal deduplication stats (alias: deduplicate)',
@@ -55,13 +55,13 @@ final class OpsManager
     }
 
     /**
-     * Run cleanup operation.
+     * 运行cleanup operation.
      */
     private function cleanup(array $opts): array
     {
         $cleaner = new DiskCleaner($this->dataDir);
 
-        $dryRun = $opts['dry-run'] ?? $opts['dry_run'] ?? false;
+        $dry运行= $opts['dry-run'] ?? $opts['dry_run'] ?? false;
         if ($dryRun) {
             $stats = $cleaner->getStats();
             return [
@@ -81,7 +81,7 @@ final class OpsManager
     }
 
     /**
-     * Check system health.
+     * 检查system health.
      */
     private function health(array $opts): array
     {
@@ -91,11 +91,11 @@ final class OpsManager
             'database' => null,
         ];
 
-        // Check disk space
+        // 检查disk space
         $cleaner = new DiskCleaner($this->dataDir);
         $results['disk_space'] = $cleaner->checkDiskSpace();
 
-        // Check database (optional, don't fail if unavailable)
+        // 检查database (optional, don't fail if unavailable)
         if ($this->db !== null) {
             try {
                 $health = $this->db->getHealthStatus();
@@ -172,7 +172,7 @@ final class OpsManager
             return ['ok' => false, 'error' => 'Database not available'];
         }
 
-        $dryRun = $opts['dry-run'] ?? $opts['dry_run'] ?? false;
+        $dry运行= $opts['dry-run'] ?? $opts['dry_run'] ?? false;
         $maxAgeDays = (int)($opts['max_age_days'] ?? 90);
         $maxEvents = (int)($opts['max_events'] ?? 1000);
 
@@ -243,7 +243,7 @@ final class OpsManager
     }
 
     /**
-     * Format output for CLI display.
+     * 格式化output for CLI display.
      */
     public static function formatOutput(array $result): string
     {

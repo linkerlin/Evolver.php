@@ -11,7 +11,7 @@ namespace Evolver\Ops;
  * - Detect corrupted git index
  * - Repair detached HEAD states
  * - Recover from merge conflicts
- * - Clean up stale locks
+ * - 清理up stale locks
  * - Verify repository integrity
  */
 final class GitSelfRepair
@@ -25,7 +25,7 @@ final class GitSelfRepair
     }
 
     /**
-     * Run Git self-repair checks and fixes.
+     * 运行Git self-repair checks and fixes.
      */
     public function repair(): array
     {
@@ -37,10 +37,10 @@ final class GitSelfRepair
             'ok' => true,
         ];
 
-        // Check 1: Verify git directory exists
+        // 检查1: Verify git directory exists
         $results['checks']['git_dir'] = $this->checkGitDir();
 
-        // Check 2: Clean stale locks
+        // 检查2: 清理stale locks
         $results['checks']['stale_locks'] = $this->checkStaleLocks();
         if (!$results['checks']['stale_locks']['ok']) {
             $fix = $this->cleanStaleLocks();
@@ -48,10 +48,10 @@ final class GitSelfRepair
             $results['ok'] = $results['ok'] && $fix['ok'];
         }
 
-        // Check 3: Verify index integrity
+        // 检查3: Verify index integrity
         $results['checks']['index'] = $this->verifyIndex();
 
-        // Check 4: Check for detached HEAD
+        // 检查4: 检查for detached HEAD
         $results['checks']['detached_head'] = $this->checkDetachedHead();
         if (!$results['checks']['detached_head']['ok']) {
             $fix = $this->fixDetachedHead($results['checks']['detached_head']['current_commit'] ?? null);
@@ -59,10 +59,10 @@ final class GitSelfRepair
             $results['ok'] = $results['ok'] && $fix['ok'];
         }
 
-        // Check 5: Verify repository integrity
+        // 检查5: Verify repository integrity
         $results['checks']['fsck'] = $this->runFsck();
 
-        // Check 6: Clean untracked files (optional)
+        // 检查6: 清理untracked files (optional)
         $results['checks']['untracked'] = $this->checkUntracked();
 
         $this->lastResult = $results;
@@ -70,7 +70,7 @@ final class GitSelfRepair
     }
 
     /**
-     * Check if .git directory exists.
+     * 检查 .git directory exists.
      */
     private function checkGitDir(): array
     {
@@ -84,7 +84,7 @@ final class GitSelfRepair
     }
 
     /**
-     * Check for stale lock files.
+     * 检查for stale lock files.
      */
     private function checkStaleLocks(): array
     {
@@ -115,7 +115,7 @@ final class GitSelfRepair
     }
 
     /**
-     * Clean stale lock files.
+     * 清理stale lock files.
      */
     private function cleanStaleLocks(): array
     {
@@ -157,7 +157,7 @@ final class GitSelfRepair
     }
 
     /**
-     * Check for detached HEAD state.
+     * 检查for detached HEAD state.
      */
     private function checkDetachedHead(): array
     {
@@ -220,7 +220,7 @@ final class GitSelfRepair
     }
 
     /**
-     * Run git fsck to verify repository integrity.
+     * 运行git fsck to verify repository integrity.
      */
     private function runFsck(): array
     {
@@ -236,7 +236,7 @@ final class GitSelfRepair
     }
 
     /**
-     * Check for untracked files.
+     * 检查for untracked files.
      */
     private function checkUntracked(): array
     {
@@ -261,7 +261,7 @@ final class GitSelfRepair
     }
 
     /**
-     * Run a git command.
+     * 运行a git command.
      */
     private function git(array $args, bool $capture = false): array
     {
@@ -307,7 +307,7 @@ final class GitSelfRepair
     }
 
     /**
-     * Get last repair result.
+     * 获取last repair result.
      */
     public function getLastResult(): array
     {

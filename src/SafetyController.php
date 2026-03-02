@@ -30,7 +30,7 @@ final class SafetyController
     }
 
     /**
-     * Get the current safety mode.
+     * 获取 current safety mode.
      */
     public function getMode(): string
     {
@@ -38,7 +38,7 @@ final class SafetyController
     }
 
     /**
-     * Check if self-modification is allowed at all.
+     * 检查 self-modification is allowed at all.
      */
     public function isSelfModifyAllowed(): bool
     {
@@ -46,7 +46,7 @@ final class SafetyController
     }
 
     /**
-     * Check if review mode is required.
+     * 检查 review mode is required.
      */
     public function isReviewRequired(): bool
     {
@@ -54,7 +54,7 @@ final class SafetyController
     }
 
     /**
-     * Check if a specific operation is allowed.
+     * 检查 a specific operation is allowed.
      * 
      * @param string $operation 'read', 'diagnose', 'propose', 'modify'
      * @return bool
@@ -70,7 +70,7 @@ final class SafetyController
     }
 
     /**
-     * Validate a modification request.
+     * 验证 a modification request.
      * Returns validation result with any violations.
      * 
      * @param array{
@@ -83,7 +83,7 @@ final class SafetyController
      */
     public function validateModification(array $modification): array
     {
-        // Check mode
+        // 检查mode
         if ($this->mode === self::MODE_NEVER) {
             return [
                 'allowed' => false,
@@ -93,7 +93,7 @@ final class SafetyController
 
         $violations = [];
 
-        // Check source protection
+        // 检查source protection
         if (isset($modification['files']) && is_array($modification['files'])) {
             $protectionResult = $this->sourceProtector->validateFiles($modification['files']);
             if (!$protectionResult['ok']) {
@@ -101,13 +101,13 @@ final class SafetyController
             }
         }
 
-        // Check blast radius limits
+        // 检查blast radius limits
         $lines = $modification['lines'] ?? 0;
         if ($lines > 20000) {
             $violations[] = 'Blast radius exceeds 20,000 lines limit';
         }
 
-        // Check gene constraints
+        // 检查gene constraints
         if (isset($modification['gene']['constraints'])) {
             $constraints = $modification['gene']['constraints'];
             $maxFiles = $constraints['max_files'] ?? 25;
@@ -117,7 +117,7 @@ final class SafetyController
             }
         }
 
-        // Check mutation risk level
+        // 检查mutation risk level
         if (isset($modification['mutation']['risk_level'])) {
             $riskLevel = $modification['mutation']['risk_level'];
             if ($riskLevel === 'high' && $this->mode !== self::MODE_ALWAYS) {
@@ -152,7 +152,7 @@ final class SafetyController
     }
 
     /**
-     * Create a review request for review mode.
+     * 创建a review request for review mode.
      * 
      * @param array $modification
      * @return array Review request data
@@ -170,7 +170,7 @@ final class SafetyController
     }
 
     /**
-     * Get safety status report.
+     * 获取safety status report.
      */
     public function getStatusReport(): array
     {
@@ -207,7 +207,7 @@ final class SafetyController
     }
 
     /**
-     * Check if a mode string is valid.
+     * 检查 a mode string is valid.
      */
     private function isValidMode(string $mode): bool
     {
@@ -216,7 +216,7 @@ final class SafetyController
     }
 
     /**
-     * Create controller from environment (factory method).
+     * 创建controller from environment (factory method).
      */
     public static function fromEnvironment(?SourceProtector $sourceProtector = null): self
     {

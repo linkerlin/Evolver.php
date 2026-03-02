@@ -11,7 +11,7 @@ namespace Evolver;
 final class GeneSelector
 {
     /**
-     * Match a pattern (substring or /regex/) against a signal list.
+     * 匹配a pattern (substring or /regex/) against a signal list.
      */
     public function matchPatternToSignals(string $pattern, array $signals): bool
     {
@@ -19,7 +19,7 @@ final class GeneSelector
             return false;
         }
 
-        // Check if pattern looks like a regex: /body/flags
+        // 检查 pattern looks like a regex: /body/flags
         $isRegexLike = strlen($pattern) >= 2
             && str_starts_with($pattern, '/')
             && strrpos($pattern, '/') > 0;
@@ -54,7 +54,7 @@ final class GeneSelector
     }
 
     /**
-     * Score a gene against signals.
+     * 评分a gene against signals.
      */
     public function scoreGene(array $gene, array $signals): int
     {
@@ -75,7 +75,7 @@ final class GeneSelector
     }
 
     /**
-     * Compute drift intensity based on effective population size.
+     * 计算 drift intensity based on effective population size.
      */
     private function computeDriftIntensity(array $opts): float
     {
@@ -96,7 +96,7 @@ final class GeneSelector
     }
 
     /**
-     * Select the best-matching gene from the pool.
+     * 选择the best-matching gene from the pool.
      */
     public function selectGene(array $genes, array $signals, array $opts = []): array
     {
@@ -117,7 +117,7 @@ final class GeneSelector
         $distilledPrefix = 'gene_distilled_';
         $distilledFactor = 0.8;
 
-        // Score all genes
+        // 评分all genes
         $scored = [];
         foreach ($genes as $gene) {
             $score = $this->scoreGene($gene, $signals);
@@ -199,7 +199,7 @@ final class GeneSelector
     }
 
     /**
-     * Select the best-matching capsule from the pool.
+     * 选择the best-matching capsule from the pool.
      */
     public function selectCapsule(array $capsules, array $signals): ?array
     {
@@ -229,7 +229,7 @@ final class GeneSelector
     }
 
     /**
-     * Compute signal overlap ratio between two signal arrays.
+     * 计算 signal overlap ratio between two signal arrays.
      */
     public function computeSignalOverlap(array $signalsA, array $signalsB): float
     {
@@ -247,7 +247,7 @@ final class GeneSelector
     }
 
     /**
-     * Compute banned gene IDs from failed capsules.
+     * 计算 banned gene IDs from failed capsules.
      */
     public function banGenesFromFailedCapsules(array $failedCapsules, array $signals, array $existingBans = []): array
     {
@@ -274,7 +274,7 @@ final class GeneSelector
     }
 
     /**
-     * Select gene and capsule together, building a selector decision.
+     * 选择gene and capsule together, building a selector decision.
      */
     public function selectGeneAndCapsule(array $input): array
     {
@@ -317,7 +317,7 @@ final class GeneSelector
     }
 
     /**
-     * Build a selector decision object.
+     * 构建a selector decision object.
      */
     public function buildSelectorDecision(array $input): array
     {

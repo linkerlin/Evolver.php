@@ -5,20 +5,20 @@ declare(strict_types=1);
 namespace Evolver;
 
 /**
- * Content-addressable hashing for GEP assets.
- * Provides canonical JSON serialization and SHA-256 based asset IDs.
- * This enables deduplication, tamper detection, and cross-node consistency.
+ * GEP资源的可寻址内容哈希。
+ * 提供规范的JSON序列化和基于SHA-256的资源ID。
+ * 支持去重、篡改检测和跨节点一致性。
  * 
- * PHP port of contentHash.js from EvoMap/evolver.
+ * 来自EvoMap/evolver的contentHash.js的PHP移植版本。
  */
 final class ContentHash
 {
-    /** Schema version for all GEP asset types */
+    /** GEP资源类型的模式版本 */
     public const SCHEMA_VERSION = '1.6.0';
 
     /**
-     * Canonical JSON: deterministic serialization with sorted keys at all levels.
-     * Arrays preserve order; non-finite numbers become null; undefined/null becomes null.
+     * 规范JSON：各层级按键排序的确定性序列化。
+     * 数组保持顺序；非有限数字变为null；undefined/null变为null。
      * 
      * @param mixed $obj
      * @return string
@@ -45,7 +45,7 @@ final class ContentHash
         }
 
         if (is_array($obj)) {
-            // Check if it's a sequential array (list) or associative array (map)
+            // 检查 it's a sequential array (list) or associative array (map)
             $isList = array_is_list($obj);
             
             if ($isList) {
@@ -86,12 +86,12 @@ final class ContentHash
     }
 
     /**
-     * Compute a content-addressable asset ID.
-     * Excludes self-referential fields (asset_id itself) from the hash input.
-     * Returns "sha256:<hex>".
+     * 计算可寻址内容的资源ID。
+     * 从哈希输入中排除自引用字段（asset_id本身）。
+     * 返回 "sha256:<hex>"。
      * 
      * @param array|object $obj
-     * @param array<string> $excludeFields Fields to exclude from hash computation
+     * @param array<string> $excludeFields 从哈希计算中排除的字段
      * @return string|null
      */
     public static function computeAssetId(array|object $obj, array $excludeFields = ['asset_id']): ?string
@@ -103,7 +103,7 @@ final class ContentHash
         // Convert to array if object
         $arr = is_object($obj) ? (array) $obj : $obj;
 
-        // Remove excluded fields
+        // 移除excluded fields
         $clean = [];
         foreach ($arr as $k => $v) {
             if (in_array($k, $excludeFields, true)) {
@@ -118,12 +118,13 @@ final class ContentHash
     }
 
     /**
-     * Verify that an object's asset_id matches its content.
+     * 验证对象的asset_id与其内容匹配。
      * 
      * @param array|object $obj
+     * @param string $assetId
      * @return bool
      */
-    public static function verifyAssetId(array|object $obj): bool
+     public static function verifyAssetId(array|object $obj): bool
     {
         $arr = is_object($obj) ? (array) $obj : $obj;
         
@@ -138,8 +139,8 @@ final class ContentHash
     }
 
     /**
-     * Generate a unique local ID for assets.
-     * This is different from asset_id - it's used for local reference.
+     * 为资源生成唯一的本地ID。
+     * 这与asset_id不同 - 它用于本地引用。
      * 
      * @param string $prefix
      * @return string

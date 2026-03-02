@@ -24,13 +24,13 @@ final class Database
         // Ensure directory exists
         $this->ensureDirectoryExists();
         
-        // Check and repair database file if needed
+        // 检查and repair database file if needed
         $this->checkAndRepairDatabase();
         
         // Open database
         $this->openDatabase();
         
-        // Run migrations
+        // 运行migrations
         $this->runMigrations();
         
         // Verify and create all indexes
@@ -53,7 +53,7 @@ final class Database
     }
 
     /**
-     * Check database file health and repair if needed.
+     * 检查database file health and repair if needed.
      */
     private function checkAndRepairDatabase(): void
     {
@@ -62,7 +62,7 @@ final class Database
             return;
         }
 
-        // Check if file is readable/writable
+        // 检查 file is readable/writable
         if (!is_readable($this->path)) {
             throw new \RuntimeException("Database file is not readable: {$this->path}");
         }
@@ -106,7 +106,7 @@ final class Database
             exec("sqlite3 " . escapeshellarg($this->path) . " .dump > " . escapeshellarg($dumpPath) . " 2>&1", $output, $returnCode);
             
             if ($returnCode === 0 && file_exists($dumpPath) && filesize($dumpPath) > 0) {
-                // Remove corrupted file
+                // 移除corrupted file
                 unlink($this->path);
                 
                 // Restore from dump
@@ -118,7 +118,7 @@ final class Database
                     throw new \RuntimeException("Failed to restore database from dump");
                 }
                 
-                // Clean up dump file
+                // 清理up dump file
                 unlink($dumpPath);
             } else {
                 throw new \RuntimeException("Database is corrupted and cannot be repaired");
@@ -149,11 +149,11 @@ final class Database
     }
 
     /**
-     * Run database migrations to ensure schema is up to date.
+     * 运行database migrations to ensure schema is up to date.
      */
     private function runMigrations(): void
     {
-        // Get current schema version
+        // 获取current schema version
         $currentVersion = $this->getSchemaVersion();
         
         if ($currentVersion === self::SCHEMA_VERSION) {
@@ -163,10 +163,10 @@ final class Database
 
         $this->migrationLog[] = "Migrating from {$currentVersion} to " . self::SCHEMA_VERSION;
 
-        // Run base schema creation
+        // 运行base schema creation
         $this->createBaseTables();
         
-        // Run version-specific migrations
+        // 运行version-specific migrations
         if (version_compare($currentVersion, '1.5.0', '<')) {
             $this->migrateTo150();
         }
@@ -175,14 +175,14 @@ final class Database
             $this->migrateTo160();
         }
 
-        // Update schema version
+        // 更新schema version
         $this->setSchemaVersion(self::SCHEMA_VERSION);
         
         $this->migrationLog[] = "Migration completed successfully";
     }
 
     /**
-     * Get current schema version from database.
+     * 获取current schema version from database.
      */
     private function getSchemaVersion(): string
     {
@@ -201,7 +201,7 @@ final class Database
     }
 
     /**
-     * Set schema version in database.
+     * 设置schema version in database.
      */
     private function setSchemaVersion(string $version): void
     {
@@ -226,7 +226,7 @@ final class Database
     }
 
     /**
-     * Create base tables (initial schema).
+     * 创建base tables (initial schema).
      */
     private function createBaseTables(): void
     {
@@ -276,7 +276,7 @@ final class Database
     {
         $this->migrationLog[] = "Running migration to 1.5.0";
 
-        // Add asset_id columns
+        // 添加asset_id columns
         $this->addColumnIfNotExists('genes', 'asset_id', 'TEXT');
         $this->addColumnIfNotExists('genes', 'schema_version', 'TEXT DEFAULT "1.5.0"');
         $this->addColumnIfNotExists('capsules', 'asset_id', 'TEXT');
@@ -297,7 +297,7 @@ final class Database
     {
         $this->migrationLog[] = "Running migration to 1.6.0";
 
-        // Create sync_status table
+        // 创建sync_status table
         $this->db->exec(<<<'SQL'
             CREATE TABLE IF NOT EXISTS sync_status (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -312,12 +312,12 @@ final class Database
             )
         SQL);
 
-        // Update existing records to have proper schema version
+        // 更新existing records to have proper schema version
         $this->db->exec("UPDATE genes SET schema_version = '1.6.0' WHERE schema_version IS NULL OR schema_version = '1.5.0'");
     }
 
     /**
-     * Add a column to a table if it doesn't exist.
+     * 添加a column to a table if it doesn't exist.
      */
     private function addColumnIfNotExists(string $table, string $column, string $type): void
     {
@@ -366,7 +366,7 @@ final class Database
     }
 
     /**
-     * Get migration log.
+     * 获取migration log.
      */
     public function getMigrationLog(): array
     {
@@ -374,7 +374,7 @@ final class Database
     }
 
     /**
-     * Get database health status.
+     * 获取database health status.
      */
     public function getHealthStatus(): array
     {
@@ -388,7 +388,7 @@ final class Database
             'migrations' => $this->migrationLog,
         ];
 
-        // Check integrity
+        // 检查integrity
         try {
             $result = $this->db->query('PRAGMA integrity_check');
             if ($result) {

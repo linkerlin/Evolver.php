@@ -18,7 +18,7 @@ final class EvolutionLoop
     private SafetyController $safetyController;
 
     private bool $running = false;
-    private bool $shouldStop = false;
+    private bool $should停止= false;
     private int $intervalSeconds = 60;
     private int $cyclesCompleted = 0;
     private int $cyclesFailed = 0;
@@ -36,7 +36,7 @@ final class EvolutionLoop
     }
 
     /**
-     * Run the evolution loop.
+     * 运行the evolution loop.
      */
     public function run(): void
     {
@@ -67,16 +67,16 @@ final class EvolutionLoop
         error_log('[EvolutionLoop] Executing evolution cycle #' . ($this->cyclesCompleted + $this->cyclesFailed + 1));
 
         try {
-            // Check if modifications are allowed
+            // 检查 modifications are allowed
             if (!$this->safetyController->isSelfModifyAllowed()) {
                 error_log('[EvolutionLoop] Self-modification disabled, skipping cycle');
                 return;
             }
 
-            // Get recent events for context
+            // 获取recent events for context
             $recentEvents = $this->store->loadRecentEvents(5);
 
-            // Build context from recent events
+            // 构建context from recent events
             $context = $this->buildContextFromEvents($recentEvents);
 
             // Extract signals from context
@@ -87,14 +87,14 @@ final class EvolutionLoop
                 return;
             }
 
-            // Load available genes
+            // 加载available genes
             $genes = $this->store->loadGenes();
             if (empty($genes)) {
                 error_log('[EvolutionLoop] No genes available, skipping cycle');
                 return;
             }
 
-            // Select best gene
+            // 选择best gene
             $selectedGene = $this->geneSelector->selectGene($genes, $signals);
 
             if (empty($selectedGene)) {
@@ -102,7 +102,7 @@ final class EvolutionLoop
                 return;
             }
 
-            // Build GEP prompt (this would be used by an LLM in real usage)
+            // 构建GEP prompt (this would be used by an LLM in real usage)
             $promptInput = [
                 'context' => $context,
                 'signals' => $signals,
@@ -113,7 +113,7 @@ final class EvolutionLoop
 
             // In loop mode, we just log the prompt that would be used
             // In real usage, this would be sent to an LLM
-            error_log('[EvolutionLoop] Generated GEP prompt for gene: ' . ($selectedGene['id'] ?? 'unknown'));
+            error_log('[EvolutionLoop] G生成d GEP prompt for gene: ' . ($selectedGene['id'] ?? 'unknown'));
 
             $this->cyclesCompleted++;
             error_log('[EvolutionLoop] Cycle completed successfully. Total: ' . $this->cyclesCompleted);
@@ -125,7 +125,7 @@ final class EvolutionLoop
     }
 
     /**
-     * Build context from recent evolution events.
+     * 构建context from recent evolution events.
      */
     private function buildContextFromEvents(array $events): string
     {
@@ -148,15 +148,15 @@ final class EvolutionLoop
     }
 
     /**
-     * Stop the loop gracefully.
+     * 停止the loop gracefully.
      */
     public function stop(): void
     {
-        $this->shouldStop = true;
+        $this->should停止= true;
     }
 
     /**
-     * Check if loop is running.
+     * 检查 loop is running.
      */
     public function isRunning(): bool
     {
@@ -164,7 +164,7 @@ final class EvolutionLoop
     }
 
     /**
-     * Get loop statistics.
+     * 获取loop statistics.
      */
     public function getStats(): array
     {

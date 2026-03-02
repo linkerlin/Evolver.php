@@ -89,7 +89,7 @@ final class LifecycleManager
     }
 
     /**
-     * Check if shutdown is in progress.
+     * 检查 shutdown is in progress.
      */
     public function isShuttingDown(): bool
     {
@@ -97,7 +97,7 @@ final class LifecycleManager
     }
 
     /**
-     * Get process uptime in seconds.
+     * 获取process uptime in seconds.
      */
     public function getUptime(): int
     {
@@ -133,7 +133,7 @@ final class LifecycleManager
     }
 
     /**
-     * Get current metrics.
+     * 获取current metrics.
      */
     public function getMetrics(): array
     {
@@ -144,7 +144,7 @@ final class LifecycleManager
     }
 
     /**
-     * Get health status.
+     * 获取health status.
      */
     public function getHealth(): array
     {
@@ -194,7 +194,7 @@ final class LifecycleManager
     }
 
     /**
-     * Create a health check endpoint response.
+     * 创建a health check endpoint response.
      */
     public function createHealthResponse(): array
     {

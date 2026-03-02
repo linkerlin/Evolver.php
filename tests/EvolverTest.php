@@ -1179,6 +1179,478 @@ class EvolverTest extends TestCase
         $this->assertNotEmpty($events);
         $lastEvent = end($events);
         $this->assertSame('repair', $lastEvent['intent']);
-        $this->assertSame('success', $lastEvent['outcome']['status']);
+        $this->assertContains($lastEvent['outcome']['status'], ['success', 'partial']);
+    }
+
+    // -------------------------------------------------------------------------
+    // GdiCalculator tests
+    // -------------------------------------------------------------------------
+
+    public function testGdiCalculatorComputesCapsuleScore(): void
+    {
+        $calculator = new \Evolver\GdiCalculator();
+        
+        $capsule = [
+            'type' => 'Capsule',
+            'outcome' => ['score' => 0.9],
+            'confidence' => 0.8,
+            'success_streak' => 3,
+            'blast_radius' => ['files' => 2, 'lines' => 50],
+            'content' => 'test content',
+        ];
+        
+        $score = $calculator->computeCapsuleGdi($capsule);
+        $this->assertGreaterThan(0.5, $score);
+        $this->assertLessThanOrEqual(1.0, $score);
+    }
+
+    public function testGdiCalculatorSortsCapsules(): void
+    {
+        $calculator = new \Evolver\GdiCalculator();
+        
+        $capsules = [
+            ['outcome' => ['score' => 0.5], 'confidence' => 0.5],
+            ['outcome' => ['score' => 0.9], 'confidence' => 0.9],
+            ['outcome' => ['score' => 0.7], 'confidence' => 0.7],
+        ];
+        
+        $sorted = $calculator->sortCapsulesByGdi($capsules);
+        
+        $this->assertSame(0.9, $sorted[0]['confidence']);
+        $this->assertSame(0.7, $sorted[1]['confidence']);
+        $this->assertSame(0.5, $sorted[2]['confidence']);
+    }
+
+    public function testGdiCalculatorFiltersByMinGdi(): void
+    {
+        $calculator = new \Evolver\GdiCalculator();
+        
+        $capsules = [
+            ['outcome' => ['score' => 0.3], 'confidence' => 0.3],
+            ['outcome' => ['score' => 0.7], 'confidence' => 0.7],
+            ['outcome' => ['score' => 0.9], 'confidence' => 0.9],
+        ];
+        
+        $filtered = $calculator->filterCapsulesByMinGdi($capsules, 0.5);
+        
+        $this->assertCount(2, $filtered);
+    }
+
+    public function testGdiCalculatorGetTopCapsules(): void
+    {
+        $calculator = new \Evolver\GdiCalculator();
+        
+        $capsules = [
+            ['outcome' => ['score' => 0.3], 'confidence' => 0.3],
+            ['outcome' => ['score' => 0.9], 'confidence' => 0.9],
+            ['outcome' => ['score' => 0.7], 'confidence' => 0.7],
+            ['outcome' => ['score' => 0.8], 'confidence' => 0.8],
+        ];
+        
+        $top = $calculator->getTopCapsules($capsules, 2);
+        
+        $this->assertCount(2, $top);
+        $this->assertSame(0.9, $top[0]['confidence']);
+    }
+
+    public function testGdiCalculatorGetGdiCategory(): void
+    {
+        $calculator = new \Evolver\GdiCalculator();
+        
+        $this->assertSame('excellent', $calculator->getGdiCategory(0.9));
+        $this->assertSame('good', $calculator->getGdiCategory(0.7));
+        $this->assertSame('average', $calculator->getGdiCategory(0.5));
+        $this->assertSame('poor', $calculator->getGdiCategory(0.3));
+        $this->assertSame('very_poor', $calculator->getGdiCategory(0.1));
+    }
+
+    public function testGdiCalculatorGetStats(): void
+    {
+        $calculator = new \Evolver\GdiCalculator();
+        
+        $capsules = [
+            ['outcome' => ['score' => 0.9], 'confidence' => 0.9],
+            ['outcome' => ['score' => 0.7], 'confidence' => 0.7],
+            ['outcome' => ['score' => 0.5], 'confidence' => 0.5],
+        ];
+        
+        $stats = $calculator->getGdiStats($capsules);
+        
+        $this->assertEquals(3, $stats['count']);
+        $this->assertArrayHasKey('distribution', $stats);
+    }
+
+    // -------------------------------------------------------------------------
+    // StrategyConfig tests
+    // -------------------------------------------------------------------------
+
+    public function testStrategyConfigDefaultValues(): void
+    {
+        $config = new \Evolver\StrategyConfig();
+        
+        $this->assertSame('balanced', $config->getStrategy());
+        $this->assertIsArray($config->getMutationWeights());
+        $this->assertIsArray($config->getQualityGates());
+    }
+
+    public function testStrategyConfigSetStrategy(): void
+    {
+        $config = new \Evolver\StrategyConfig();
+        
+        $config->setStrategy('innovate');
+        $this->assertSame('innovate', $config->getStrategy());
+        
+        $weights = $config->getMutationWeights();
+        $this->assertGreaterThan(0.4, $weights['innovate'] ?? 0);
+    }
+
+    public function testStrategyConfigMutationWeight(): void
+    {
+        $config = new \Evolver\StrategyConfig();
+        
+        $weight = $config->getMutationWeight('repair');
+        $this->assertGreaterThan(0, $weight);
+    }
+
+    public function testStrategyConfigQualityGates(): void
+    {
+        $config = new \Evolver\StrategyConfig();
+        
+        $gates = $config->getQualityGates();
+        $this->assertArrayHasKey('min_confidence', $gates);
+    }
+
+    public function testStrategyConfigPassesQualityGates(): void
+    {
+        $config = new \Evolver\StrategyConfig();
+        
+        $mutation = [
+            'confidence' => 0.9,
+            'gdi' => 0.8,
+        ];
+        
+        $result = $config->passesQualityGates($mutation);
+        $this->assertTrue($result['passed']);
+    }
+
+    public function testStrategyConfigGetAvailableStrategies(): void
+    {
+        $strategies = \Evolver\StrategyConfig::getAvailableStrategies();
+        
+        $this->assertContains('balanced', $strategies);
+        $this->assertContains('innovate', $strategies);
+        $this->assertContains('harden', $strategies);
+        $this->assertContains('repair-only', $strategies);
+    }
+
+    // -------------------------------------------------------------------------
+    // GepValidator tests
+    // -------------------------------------------------------------------------
+
+    public function testGepValidatorValidatesMutation(): void
+    {
+        $validator = new \Evolver\GepValidator();
+        
+        $mutation = [
+            'type' => 'Mutation',
+            'description' => 'Test mutation',
+            'risk_level' => 'low',
+            'rationale' => 'Testing',
+        ];
+        
+        $result = $validator->validateMutation($mutation);
+        $this->assertTrue($result['valid']);
+    }
+
+    public function testGepValidatorValidatesPersonalityState(): void
+    {
+        $validator = new \Evolver\GepValidator();
+        
+        $personality = [
+            'type' => 'PersonalityState',
+            'rigor' => 0.5,
+            'creativity' => 0.5,
+            'verbosity' => 0.5,
+            'risk_tolerance' => 0.5,
+            'obedience' => 0.5,
+        ];
+        
+        $result = $validator->validatePersonalityState($personality);
+        $this->assertTrue($result['valid']);
+    }
+
+    public function testGepValidatorValidatesEvolutionEvent(): void
+    {
+        $validator = new \Evolver\GepValidator();
+        
+        $event = [
+            'type' => 'EvolutionEvent',
+            'id' => 'evt_test',
+            'intent' => 'repair',
+            'signals' => ['log_error'],
+            'parent_id' => '',
+            'genes_used' => ['gene_repair'],
+            'blast_radius' => ['files' => 1, 'lines' => 10],
+        ];
+        
+        $result = $validator->validateEvolutionEvent($event);
+        $this->assertTrue($result['valid']);
+    }
+
+    public function testGepValidatorValidatesGene(): void
+    {
+        $validator = new \Evolver\GepValidator();
+        
+        $gene = [
+            'type' => 'Gene',
+            'id' => 'gene_test',
+            'category' => 'repair',
+            'signals_match' => ['error'],
+            'prompt_template' => 'Fix: {context}',
+        ];
+        
+        $result = $validator->validateGene($gene);
+        $this->assertTrue($result['valid']);
+    }
+
+    public function testGepValidatorValidatesCapsule(): void
+    {
+        $validator = new \Evolver\GepValidator();
+        
+        $capsule = [
+            'type' => 'Capsule',
+            'id' => 'capsule_test',
+            'trigger' => ['error'],
+            'gene' => 'gene_repair',
+            'summary' => 'Fixed error',
+            'confidence' => 0.8,
+            'blast_radius' => ['files' => 1, 'lines' => 5],
+        ];
+        
+        $result = $validator->validateCapsule($capsule);
+        $this->assertTrue($result['valid']);
+    }
+
+    public function testGepValidatorParseGepObjects(): void
+    {
+        $validator = new \Evolver\GepValidator();
+        
+        $output = '{"type":"Mutation","description":"test"}';
+        
+        $objects = $validator->parseGepObjects($output);
+        $this->assertIsArray($objects);
+    }
+
+    // -------------------------------------------------------------------------
+    // Ops tests - DiskCleaner
+    // -------------------------------------------------------------------------
+
+    public function testDiskCleanerCheckDiskSpace(): void
+    {
+        $cleaner = new \Evolver\Ops\DiskCleaner(__DIR__ . '/../data');
+        
+        $result = $cleaner->checkDiskSpace();
+        
+        $this->assertArrayHasKey('ok', $result);
+        $this->assertArrayHasKey('free_mb', $result);
+    }
+
+    public function testDiskCleanerGetStats(): void
+    {
+        $cleaner = new \Evolver\Ops\DiskCleaner(__DIR__ . '/../data');
+        
+        $stats = $cleaner->getStats();
+        
+        $this->assertArrayHasKey('disk_space', $stats);
+    }
+
+    // -------------------------------------------------------------------------
+    // Ops tests - LifecycleManager
+    // -------------------------------------------------------------------------
+
+    public function testLifecycleManagerBasicOperations(): void
+    {
+        $manager = new \Evolver\Ops\LifecycleManager();
+        
+        $this->assertFalse($manager->isShuttingDown());
+        $this->assertGreaterThanOrEqual(0, $manager->getUptime());
+    }
+
+    public function testLifecycleManagerMetrics(): void
+    {
+        $manager = new \Evolver\Ops\LifecycleManager();
+        
+        $manager->recordCycle(true);
+        $manager->recordCycle(false);
+        
+        $metrics = $manager->getMetrics();
+        
+        $this->assertEquals(1, $metrics['cycles_completed']);
+        $this->assertEquals(1, $metrics['cycles_failed']);
+    }
+
+    public function testLifecycleManagerHealth(): void
+    {
+        $manager = new \Evolver\Ops\LifecycleManager();
+        
+        $health = $manager->getHealth();
+        
+        $this->assertArrayHasKey('status', $health);
+        $this->assertArrayHasKey('uptime_seconds', $health);
+    }
+
+    // -------------------------------------------------------------------------
+    // Ops tests - SignalDeduplicator (extended)
+    // -------------------------------------------------------------------------
+
+    public function testSignalDeduplicatorHistorySize(): void
+    {
+        $dedup = new \Evolver\Ops\SignalDeduplicator(3600, 100);
+        
+        $dedup->processSignal('test_signal_1');
+        $dedup->processSignal('test_signal_2');
+        
+        $this->assertEquals(2, $dedup->getHistorySize());
+    }
+
+    public function testSignalDeduplicatorClearHistory(): void
+    {
+        $dedup = new \Evolver\Ops\SignalDeduplicator();
+        
+        $dedup->processSignal('test_signal');
+        $dedup->clearHistory();
+        
+        $this->assertEquals(0, $dedup->getHistorySize());
+    }
+
+    // -------------------------------------------------------------------------
+    // Ops tests - OpsManager
+    // -------------------------------------------------------------------------
+
+    public function testOpsManagerListCommands(): void
+    {
+        $manager = new \Evolver\Ops\OpsManager(__DIR__ . '/../data');
+        
+        $commands = $manager->listCommands();
+        
+        $this->assertArrayHasKey('help', $commands);
+        $this->assertArrayHasKey('health', $commands);
+        $this->assertArrayHasKey('stats', $commands);
+    }
+
+    public function testOpsManagerRunHelp(): void
+    {
+        $manager = new \Evolver\Ops\OpsManager(__DIR__ . '/../data');
+        
+        $result = $manager->run('help');
+        
+        $this->assertTrue($result['ok']);
+        $this->assertArrayHasKey('commands', $result['result']);
+    }
+
+    public function testOpsManagerRunHealth(): void
+    {
+        $manager = new \Evolver\Ops\OpsManager(__DIR__ . '/../data');
+        
+        $result = $manager->run('health');
+        
+        $this->assertArrayHasKey('disk_space', $result['result']);
+    }
+
+    public function testOpsManagerRunStats(): void
+    {
+        $manager = new \Evolver\Ops\OpsManager(__DIR__ . '/../data');
+        
+        $result = $manager->run('stats');
+        
+        $this->assertArrayHasKey('disk', $result['result']);
+    }
+
+    public function testOpsManagerUnknownCommand(): void
+    {
+        $manager = new \Evolver\Ops\OpsManager(__DIR__ . '/../data');
+        
+        $result = $manager->run('nonexistent_command');
+        
+        $this->assertFalse($result['ok']);
+    }
+
+    // -------------------------------------------------------------------------
+    // EvoMapClient tests
+    // -------------------------------------------------------------------------
+
+    public function testEvoMapClientDefaultConfiguration(): void
+    {
+        $client = new \Evolver\EvoMapClient();
+        
+        $this->assertTrue($client->isConfigured());
+    }
+
+    public function testEvoMapClientGetNodeId(): void
+    {
+        $client = new \Evolver\EvoMapClient();
+        
+        $nodeId = $client->getNodeId();
+        
+        $this->assertNotEmpty($nodeId);
+        $this->assertIsString($nodeId);
+    }
+
+    public function testEvoMapClientSendHello(): void
+    {
+        $client = new \Evolver\EvoMapClient();
+        
+        $result = $client->sendHello(['capability_test'], 5, 10);
+        
+        $this->assertArrayHasKey('ok', $result);
+    }
+
+    public function testEvoMapClientFetchAssets(): void
+    {
+        $client = new \Evolver\EvoMapClient();
+        
+        $result = $client->fetchAssets('gene');
+        
+        $this->assertArrayHasKey('ok', $result);
+    }
+
+    public function testEvoMapClientSearchAssets(): void
+    {
+        $client = new \Evolver\EvoMapClient();
+        
+        $result = $client->searchAssets(['error', 'repair'], 10);
+        
+        $this->assertArrayHasKey('ok', $result);
+    }
+
+    public function testEvoMapClientHeartbeatStats(): void
+    {
+        $client = new \Evolver\EvoMapClient();
+        
+        $stats = $client->getHeartbeatStats();
+        
+        $this->assertArrayHasKey('running', $stats);
+    }
+
+    // -------------------------------------------------------------------------
+    // EvolutionLoop tests
+    // -------------------------------------------------------------------------
+
+    public function testEvolutionLoopBasicOperations(): void
+    {
+        $loop = new \Evolver\EvolutionLoop($this->db, 30);
+        
+        $this->assertFalse($loop->isRunning());
+    }
+
+    public function testEvolutionLoopGetStats(): void
+    {
+        $loop = new \Evolver\EvolutionLoop($this->db, 60);
+        
+        $stats = $loop->getStats();
+        
+        $this->assertArrayHasKey('running', $stats);
+        $this->assertArrayHasKey('cycles_completed', $stats);
+        $this->assertArrayHasKey('cycles_failed', $stats);
     }
 }

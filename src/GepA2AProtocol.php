@@ -300,6 +300,220 @@ final class GepA2AProtocol
             'timestamp' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
         ];
     }
+
+    // -------------------------------------------------------------------------
+    // HTTP Transport Methods
+    // -------------------------------------------------------------------------
+
+    /**
+     * Send a protocol message to the Hub via HTTP.
+     *
+     * @param array $message Protocol message to send
+     * @param string|null $hubUrl Hub URL (defaults to env var)
+     * @param int $timeout Request timeout in seconds
+     * @return array{success: bool, status: int, body: array, error: string|null}
+     */
+    public function httpTransportSend(array $message, ?string $hubUrl = null, int $timeout = 10): array
+    {
+        $hubUrl = $hubUrl ?: (getenv('A2A_HUB_URL') ?: getenv('EVOMAP_HUB_URL') ?: 'https://evomap.ai');
+        $url = rtrim($hubUrl, '/') . '/a2a/receive';
+
+        $ch = curl_init($url);
+        if ($ch === false) {
+            return ['success' => false, 'status' => 0, 'body' => [], 'error' => 'Failed to initialize curl'];
+        }
+
+        $payload = json_encode($message, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => $timeout,
+            CURLOPT_CONNECTTIMEOUT => min($timeout, 5),
+        ]);
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+
+        if ($error) {
+            return ['success' => false, 'status' => 0, 'body' => [], 'error' => $error];
+        }
+
+        $body = [];
+        if (!empty($response)) {
+            $decoded = json_decode($response, true);
+            if (is_array($decoded)) {
+                $body = $decoded;
+            }
+        }
+
+        return [
+            'success' => $httpCode >= 200 && $httpCode < 300,
+            'status' => (int)$httpCode,
+            'body' => $body,
+            'error' => null,
+        ];
+    }
+
+    /**
+     * Receive/fetch messages from the Hub via HTTP.
+     *
+     * @param array $opts Fetch options
+     * @param string|null $hubUrl Hub URL
+     * @param int $timeout Request timeout
+     * @return array{success: bool, status: int, body: array, error: string|null}
+     */
+    public function httpTransportReceive(array $opts = [], ?string $hubUrl = null, int $timeout = 10): array
+    {
+        $hubUrl = $hubUrl ?: (getenv('A2A_HUB_URL') ?: getenv('EVOMAP_HUB_URL') ?: 'https://evomap.ai');
+        $url = rtrim($hubUrl, '/') . '/a2a/fetch';
+
+        $message = $this->buildFetch($opts);
+
+        $ch = curl_init($url);
+        if ($ch === false) {
+            return ['success' => false, 'status' => 0, 'body' => [], 'error' => 'Failed to initialize curl'];
+        }
+
+        $payload = json_encode($message, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => $timeout,
+            CURLOPT_CONNECTTIMEOUT => min($timeout, 5),
+        ]);
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+
+        if ($error) {
+            return ['success' => false, 'status' => 0, 'body' => [], 'error' => $error];
+        }
+
+        $body = [];
+        if (!empty($response)) {
+            $decoded = json_decode($response, true);
+            if (is_array($decoded)) {
+                $body = $decoded;
+            }
+        }
+
+        return [
+            'success' => $httpCode >= 200 && $httpCode < 300,
+            'status' => (int)$httpCode,
+            'body' => $body,
+            'error' => null,
+        ];
+    }
+
+    // -------------------------------------------------------------------------
+    // Heartbeat Mechanism
+    // -------------------------------------------------------------------------
+
+    private ?array $heartbeatStats = null;
+
+    /**
+     * Send a hello message to the Hub for registration.
+     *
+     * @param array $opts Hello options (capabilities, geneCount, capsuleCount)
+     * @param string|null $hubUrl Hub URL
+     * @return array{success: bool, status: int, body: array}
+     */
+    public function sendHelloToHub(array $opts = [], ?string $hubUrl = null): array
+    {
+        $message = $this->buildHello($opts);
+        return $this->httpTransportSend($message, $hubUrl);
+    }
+
+    /**
+     * Send a heartbeat to the Hub.
+     *
+     * @param string|null $hubUrl Hub URL
+     * @return array{success: bool, status: int, body: array}
+     */
+    public function sendHeartbeat(?string $hubUrl = null): array
+    {
+        $stats = $this->getHeartbeatStats();
+        $message = $this->buildHeartbeat($stats['uptime_ms']);
+        $result = $this->httpTransportSend($message, $hubUrl, 5);
+
+        // Update stats
+        $this->heartbeatStats['last_heartbeat_at'] = time();
+        $this->heartbeatStats['heartbeat_count']++;
+        if ($result['success']) {
+            $this->heartbeatStats['successful_heartbeats']++;
+        } else {
+            $this->heartbeatStats['failed_heartbeats']++;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Get heartbeat statistics.
+     */
+    public function getHeartbeatStats(): array
+    {
+        if ($this->heartbeatStats === null) {
+            $this->heartbeatStats = [
+                'started_at' => time(),
+                'uptime_ms' => 0,
+                'last_heartbeat_at' => null,
+                'heartbeat_count' => 0,
+                'successful_heartbeats' => 0,
+                'failed_heartbeats' => 0,
+            ];
+        }
+
+        $this->heartbeatStats['uptime_ms'] = (time() - $this->heartbeatStats['started_at']) * 1000;
+        return $this->heartbeatStats;
+    }
+
+    /**
+     * Start periodic heartbeat (non-blocking, returns immediately).
+     * In PHP, this typically requires an external process manager or async library.
+     * This method provides a simple interface that can be called periodically.
+     *
+     * @param int $intervalSeconds Heartbeat interval (default 60)
+     */
+    public function startHeartbeat(int $intervalSeconds = 60): void
+    {
+        // Initialize stats
+        $this->heartbeatStats = [
+            'started_at' => time(),
+            'uptime_ms' => 0,
+            'last_heartbeat_at' => null,
+            'heartbeat_count' => 0,
+            'successful_heartbeats' => 0,
+            'failed_heartbeats' => 0,
+            'interval_seconds' => $intervalSeconds,
+        ];
+
+        // Send initial heartbeat
+        $this->sendHeartbeat();
+    }
+
+    /**
+     * Check if heartbeat should be sent based on interval.
+     */
+    public function shouldSendHeartbeat(): bool
+    {
+        if ($this->heartbeatStats === null) {
+            return true;
+        }
+
+        $interval = $this->heartbeatStats['interval_seconds'] ?? 60;
+        $lastHeartbeat = $this->heartbeatStats['last_heartbeat_at'] ?? 0;
+
+        return (time() - $lastHeartbeat) >= $interval;
+    }
 }
 
 /**

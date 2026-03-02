@@ -126,43 +126,8 @@ final class EnvFingerprint
      */
     public static function getDeviceId(): string
     {
-        if (self::$cachedDeviceId !== null) {
-            return self::$cachedDeviceId;
-        }
-
-        // 1. Environment variable override
-        $envId = getenv('EVOMAP_DEVICE_ID');
-        if ($envId !== false && $envId !== '' && preg_match(self::DEVICE_ID_RE, $envId)) {
-            self::$cachedDeviceId = $envId;
-            return $envId;
-        }
-
-        // 2. Persisted in ~/.evomap/device_id
-        $homePath = self::getHomeDeviceIdPath();
-        if ($homePath !== null) {
-            $stored = self::readDeviceIdFile($homePath);
-            if ($stored !== null) {
-                self::$cachedDeviceId = $stored;
-                return $stored;
-            }
-        }
-
-        // 3. Project-local fallback: <project>/.evomap_device_id
-        $localPath = self::getLocalDeviceIdPath();
-        $stored = self::readDeviceIdFile($localPath);
-        if ($stored !== null) {
-            self::$cachedDeviceId = $stored;
-            return $stored;
-        }
-
-        // G生成一个 new ID from hardware
-        $id = self::generateDeviceId();
-
-        // Persist it
-        self::persistDeviceId($id);
-
-        self::$cachedDeviceId = $id;
-        return $id;
+        // Delegate to DeviceId class for full implementation
+        return DeviceId::getDeviceId();
     }
 
     // -------------------------------------------------------------------------
@@ -354,25 +319,8 @@ final class EnvFingerprint
 
     public static function isContainer(): bool
     {
-        // Docker indicator file
-        if (file_exists('/.dockerenv')) {
-            return true;
-        }
-
-        // cgroup markers
-        if (file_exists('/proc/1/cgroup')) {
-            $content = @file_get_contents('/proc/1/cgroup');
-            if ($content !== false && preg_match('/docker|kubepods|containerd|cri-o|lxc|ecs/i', $content)) {
-                return true;
-            }
-        }
-
-        // Podman / OCI
-        if (file_exists('/run/.containerenv')) {
-            return true;
-        }
-
-        return false;
+        // Delegate to DeviceId class
+        return DeviceId::isContainer();
     }
 
     // -------------------------------------------------------------------------

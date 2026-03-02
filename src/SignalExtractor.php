@@ -24,6 +24,14 @@ final class SignalExtractor
         'evolution_stagnation_detected',
         'repair_loop_detected',
         'force_innovation_after_repair_loop',
+        'empty_cycle_loop_detected',
+        'force_steady_state',
+        'evolution_saturation',
+        'consecutive_failure_streak',
+        'failure_loop_detected',
+        'high_failure_ratio',
+        'high_tool_usage',
+        'repeated_tool_usage',
     ];
 
     /** Repair loop detection thresholds */
@@ -179,12 +187,82 @@ final class SignalExtractor
                 $signals[] = 'signal_oscillation_detected';
             }
 
+            // --- Saturation detection (graceful degradation) ---
+            // When consecutive empty cycles pile up, the evolver has exhausted its innovation space
+            if ($history['consecutiveEmptyCycles'] >= 5) {
+                if (!in_array('force_steady_state', $signals)) $signals[] = 'force_steady_state';
+                if (!in_array('evolution_saturation', $signals)) $signals[] = 'evolution_saturation';
+            } elseif ($history['consecutiveEmptyCycles'] >= 3) {
+                if (!in_array('evolution_saturation', $signals)) $signals[] = 'evolution_saturation';
+            }
+
+            // --- Failure streak awareness ---
+            if ($history['consecutiveFailureCount'] >= 3) {
+                $signals[] = 'consecutive_failure_streak_' . $history['consecutiveFailureCount'];
+                if ($history['consecutiveFailureCount'] >= 5) {
+                    $signals[] = 'failure_loop_detected';
+                    // Ban the dominant gene
+                    if (!empty($history['topGene'])) {
+                        $signals[] = 'ban_gene:' . $history['topGene'];
+                    }
+                }
+            }
+
+            // High failure ratio (>= 75% failed in last 8 cycles)
+            if ($history['recentFailureRatio'] >= 0.75) {
+                $signals[] = 'high_failure_ratio';
+                if (!in_array('force_innovation_after_repair_loop', $signals)) {
+                    $signals[] = 'force_innovation_after_repair_loop';
+                }
+            }
+
             // 移除suppressed signals (appeared too frequently without resolution)
             $signals = array_filter($signals, function ($s) use ($history) {
                 $key = str_starts_with($s, 'errsig:') ? 'errsig' :
                     (str_starts_with($s, 'recurring_errsig') ? 'recurring_errsig' : $s);
                 return !$history['suppressedSignals']->contains($key);
             });
+        }
+
+        // --- Tool Usage Analytics ---
+        $toolUsage = [];
+        preg_match_all('/\[TOOL:\s*([\w-]+)\]/', $corpus, $toolMatches);
+        $toolMatches = $toolMatches[1] ?? [];
+        
+        // Extract exec commands to identify benign loops
+        preg_match_all('/exec:\s*(php\s+[\w\/\.-]+\.php\s+ensure)/i', $corpus, $execMatches);
+        $benignExecCount = count($execMatches[0] ?? []);
+        
+        foreach ($toolMatches as $toolName) {
+            $toolUsage[$toolName] = ($toolUsage[$toolName] ?? 0) + 1;
+        }
+        
+        // Adjust exec count by subtracting benign commands
+        if (isset($toolUsage['exec'])) {
+            $toolUsage['exec'] = max(0, $toolUsage['exec'] - $benignExecCount);
+        }
+        
+        foreach ($toolUsage as $tool => $count) {
+            if ($count >= 10) {
+                $signals[] = 'high_tool_usage:' . $tool;
+            }
+            if ($tool === 'exec' && $count >= 5) {
+                $signals[] = 'repeated_tool_usage:exec';
+            }
+        }
+
+        // --- Multi-language feature request detection ---
+        $featureRequestSnippet = $this->extractFeatureRequestSnippet($corpus);
+        if ($featureRequestSnippet !== null) {
+            $signals[] = 'user_feature_request:' . $featureRequestSnippet;
+        }
+
+        // --- Multi-language improvement suggestion detection ---
+        if (!$errorHit) {
+            $improvementSnippet = $this->extractImprovementSnippet($corpus);
+            if ($improvementSnippet !== null) {
+                $signals[] = 'user_improvement_suggestion:' . $improvementSnippet;
+            }
         }
 
         return array_values(array_unique($signals));
@@ -341,6 +419,16 @@ final class SignalExtractor
             }
         }
 
+        // Find top gene (most frequently used)
+        $topGene = null;
+        $topGeneCount = 0;
+        foreach ($geneFreq as $gene => $count) {
+            if ($count > $topGeneCount) {
+                $topGeneCount = $count;
+                $topGene = $gene;
+            }
+        }
+
         return [
             'suppressedSignals' => $suppressedSignals,
             'recentIntents' => array_map(fn($e) => $e['intent'] ?? 'unknown', $recent),
@@ -352,6 +440,7 @@ final class SignalExtractor
             'recentFailureRatio' => count($tail) > 0 ? $recentFailureCount / count($tail) : 0.0,
             'signalFreq' => $signalFreq,
             'geneFreq' => $geneFreq,
+            'topGene' => $topGene,
             'oscillationCount' => $oscillationCount,
             'uniqueFilesTouched' => array_unique($filesTouched),
             'repeatedFileModifications' => $repeatedFileModifications,
@@ -383,5 +472,98 @@ final class SignalExtractor
             'failure_ratio' => self::FAILURE_RATIO_THRESHOLD,
             'oscillation' => self::OSCILLATION_THRESHOLD,
         ];
+    }
+
+    // -------------------------------------------------------------------------
+    // Multi-language signal extraction helpers
+    // -------------------------------------------------------------------------
+
+    /**
+     * Extract feature request snippet from corpus (EN, ZH-CN, ZH-TW, JA).
+     */
+    private function extractFeatureRequestSnippet(string $corpus): ?string
+    {
+        $snippet = null;
+
+        // English
+        if (preg_match('/\b(add|implement|create|build|make|develop|write|design)\b[^.?!
+]{3,120}\b(feature|function|module|capability|tool|support|endpoint|command|option|mode)\b/i', $corpus, $m)) {
+            $snippet = preg_replace('/\s+/', ' ', trim($m[0]));
+        }
+        if (!$snippet && preg_match('/\b(i want|i need|we need|please add|can you add|could you add|let\'?s add)\b/i', $corpus)) {
+            if (preg_match('/.{0,80}\b(i want|i need|we need|please add|can you add|could you add|let\'?s add)\b.{0,80}/i', $corpus, $m)) {
+                $snippet = preg_replace('/\s+/', ' ', trim($m[0]));
+            }
+        }
+
+        // ZH-CN (Simplified Chinese)
+        if (!$snippet && preg_match('/加个|实现一下|做个|想要\s*一个|需要\s*一个|帮我加|帮我开发|加一下|新增一个|加个功能|做个功能|我想/', $corpus)) {
+            if (preg_match('/.{0,100}(加个|实现一下|做个|想要\s*一个|需要\s*一个|帮我加|帮我开发|加一下|新增一个|加个功能|做个功能).{0,100}/u', $corpus, $m)) {
+                $snippet = preg_replace('/\s+/', ' ', trim($m[0]));
+            }
+            if (!$snippet && preg_match('/我想/u', $corpus)) {
+                if (preg_match('/我想\s*[，,.。、\s]*([\s\S]{0,400})/u', $corpus, $m)) {
+                    $snippet = preg_replace('/\s+/', ' ', trim($m[1])) ?: '功能需求';
+                }
+            }
+            $snippet = $snippet ?: '功能需求';
+        }
+
+        // ZH-TW (Traditional Chinese)
+        if (!$snippet && preg_match('/加個|實現一下|做個|想要一個|請加|新增一個|加個功能|做個功能|幫我加/u', $corpus)) {
+            if (preg_match('/.{0,100}(加個|實現一下|做個|想要一個|請加|新增一個|加個功能|做個功能|幫我加).{0,100}/u', $corpus, $m)) {
+                $snippet = preg_replace('/\s+/', ' ', trim($m[0]));
+            }
+            $snippet = $snippet ?: '功能需求';
+        }
+
+        // JA (Japanese)
+        if (!$snippet && preg_match('/追加|実装|作って|機能を|追加して|が欲しい|を追加|してほしい/u', $corpus)) {
+            if (preg_match('/.{0,100}(追加|実装|作って|機能を|追加して|が欲しい|を追加|してほしい).{0,100}/u', $corpus, $m)) {
+                $snippet = preg_replace('/\s+/', ' ', trim($m[0]));
+            }
+            $snippet = $snippet ?: '機能要望';
+        }
+
+        return $snippet ? substr($snippet, 0, 200) : null;
+    }
+
+    /**
+     * Extract improvement suggestion snippet from corpus (EN, ZH-CN, ZH-TW, JA).
+     */
+    private function extractImprovementSnippet(string $corpus): ?string
+    {
+        $snippet = null;
+
+        // English
+        if (preg_match('/.{0,80}\b(should be|could be better|improve|enhance|upgrade|refactor|clean up|simplify|streamline)\b.{0,80}/i', $corpus, $m)) {
+            $snippet = preg_replace('/\s+/', ' ', trim($m[0]));
+        }
+
+        // ZH-CN
+        if (!$snippet && preg_match('/改进一下|优化一下|简化|重构|整理一下|弄得更好/u', $corpus)) {
+            if (preg_match('/.{0,100}(改进一下|优化一下|简化|重构|整理一下|弄得更好).{0,100}/u', $corpus, $m)) {
+                $snippet = preg_replace('/\s+/', ' ', trim($m[0]));
+            }
+            $snippet = $snippet ?: '改进建议';
+        }
+
+        // ZH-TW
+        if (!$snippet && preg_match('/改進一下|優化一下|簡化|重構|整理一下|弄得更好/u', $corpus)) {
+            if (preg_match('/.{0,100}(改進一下|優化一下|簡化|重構|整理一下|弄得更好).{0,100}/u', $corpus, $m)) {
+                $snippet = preg_replace('/\s+/', ' ', trim($m[0]));
+            }
+            $snippet = $snippet ?: '改進建議';
+        }
+
+        // JA
+        if (!$snippet && preg_match('/改善|最適化|簡素化|リファクタ|良くして|改良/u', $corpus)) {
+            if (preg_match('/.{0,100}(改善|最適化|簡素化|リファクタ|良くして|改良).{0,100}/u', $corpus, $m)) {
+                $snippet = preg_replace('/\s+/', ' ', trim($m[0]));
+            }
+            $snippet = $snippet ?: '改善要望';
+        }
+
+        return $snippet ? substr($snippet, 0, 200) : null;
     }
 }

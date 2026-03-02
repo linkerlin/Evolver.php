@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Evolver;
 
+use Evolver\Ops\Innovation;
+
 /**
  * Builds GEP protocol prompts.
  * PHP port of prompt.js from EvoMap/evolver.
@@ -107,6 +109,10 @@ SCHEMA;
         $cycleId = $input['cycleId'] ?? null;
         $recentHistory = $input['recentHistory'] ?? [];
         $failedCapsules = $input['failedCapsules'] ?? [];
+        $hubLessons = $input['hubLessons'] ?? [];
+        $capabilityCandidatesPreview = $input['capabilityCandidatesPreview'] ?? '(none)';
+        $externalCandidatesPreview = $input['externalCandidatesPreview'] ?? '(none)';
+        $hubMatchedBlock = $input['hubMatchedBlock'] ?? null;
 
         $parentValue = $parentEventId ? '"' . $parentEventId . '"' : 'null';
         $selectedGeneId = $selectedGene['id'] ?? 'gene_<name>';
@@ -123,9 +129,9 @@ SCHEMA;
         } else {
             $strategyBlock = "ACTIVE STRATEGY (Generic):\n" .
                 "1. Analyze signals and context.\n" .
-                "2. 选择or create a Gene that addresses the root cause.\n" .
+                "2. Select or create a Gene that addresses the root cause.\n" .
                 "3. Apply minimal, safe changes.\n" .
-                "4. 验证 changes strictly.\n" .
+                "4. Validate changes strictly.\n" .
                 "5. Solidify knowledge.";
         }
 
@@ -138,11 +144,27 @@ SCHEMA;
         // Anti-pattern zone
         $antiPatternZone = $this->buildAntiPatternZone($failedCapsules, $signals);
 
-        // Capsule candidates preview
-        $capsPreview = '';
-        if (!empty($capsuleCandidates)) {
-            $capsPreview = json_encode($capsuleCandidates[0], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        // Innovation block (stagnation detection)
+        $innovationBlock = $this->buildInnovationBlock($signals);
+
+        // History block
+        $historyBlock = $this->buildHistoryBlock($recentHistory);
+
+        // Lessons block from hub
+        $lessonsBlock = $this->buildLessonsBlock($hubLessons, $signals);
+
+        // Capability candidates preview (truncate if too large)
+        $capsPreview = $capabilityCandidatesPreview;
+        $capsLimit = $selectedGene ? 500 : 2000;
+        if (strlen($capsPreview) > $capsLimit) {
+            $capsPreview = substr($capsPreview, 0, $capsLimit) . "\n...[TRUNCATED_CAPABILITIES]...";
         }
+
+        // Hub matched block
+        $hubMatched = $hubMatchedBlock ?: '(no hub match)';
+
+        // External candidates preview
+        $externalPreview = $externalCandidatesPreview ?: '(none)';
 
         // Optimize signals display
         $uniqueSignals = array_unique($signals);
@@ -164,6 +186,9 @@ SCHEMA;
         $envFingerprint = EnvFingerprint::capture();
         $envFingerprintJson = json_encode($envFingerprint, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
+        // Injection hint from environment
+        $injectionHint = getenv('EVOLVE_HINT') ?: '(none)';
+
         // 构建the prompt
         return trim(<<<PROMPT
         GEP -- EVOLUTION PROTOCOL{$cycleLabel} [{$nowIso}]
@@ -178,6 +203,9 @@ SCHEMA;
 
         Context [Env Fingerprint]:
         {$envFingerprintJson}
+        {$innovationBlock}
+        Context [Injection Hint]:
+        {$injectionHint}
 
         Selector decision:
         {$selectorJson}
@@ -194,7 +222,15 @@ SCHEMA;
         Capsules:
         {$capsulesPreview}
 
-        {$antiPatternZone}
+        Context [Capability Candidates]:
+        {$capsPreview}
+
+        Context [Hub Matched Solution]:
+        {$hubMatched}
+
+        Context [External Candidates]:
+        {$externalPreview}
+        {$antiPatternZone}{$lessonsBlock}{$historyBlock}
 
         ━━━━━━━━━━━━━━━━━━━━━━
         IV. Execution Context (Truncated)
@@ -322,7 +358,7 @@ SCHEMA;
             return '';
         }
 
-        $sig设置= array_flip(array_map('strtolower', array_map('strval', $signals)));
+        $sigSet = array_flip(array_map('strtolower', array_map('strval', $signals)));
         $matched = [];
 
         for ($i = count($failedCapsules) - 1; $i >= 0 && count($matched) < 3; $i--) {
@@ -351,12 +387,141 @@ SCHEMA;
                 : '(no diff)';
             $triggerStr = implode(', ', array_slice($fc['trigger'] ?? [], 0, 4));
             $failureReason = substr((string)($fc['failure_reason'] ?? 'unknown'), 0, 300);
-            $diffPreview清理= str_replace("\n", ' ', $diffPreview);
+            $diffPreviewClean = str_replace("\n", ' ', $diffPreview);
             $lines[] = "  " . ($idx + 1) . ". Gene: " . ($fc['gene'] ?? 'unknown') . " | Signals: [{$triggerStr}]";
             $lines[] = "     Failure: {$failureReason}";
             $lines[] = "     Diff (first 500 chars): {$diffPreviewClean}";
         }
 
         return "\nContext [Anti-Pattern Zone] (AVOID these failed approaches):\n" . implode("\n", $lines) . "\n";
+    }
+
+    /**
+     * 构建lessons block from hub lessons.
+     * PHP port of buildLessonsBlock from prompt.js (lines 189-220).
+     */
+    private function buildLessonsBlock(array $hubLessons, array $signals): string
+    {
+        if (empty($hubLessons)) {
+            return '';
+        }
+
+        $positive = [];
+        $negative = [];
+
+        foreach ($hubLessons as $l) {
+            if (($positiveCount = count($positive)) + ($negativeCount = count($negative)) >= 6) {
+                break;
+            }
+            if (empty($l['content'])) {
+                continue;
+            }
+
+            $scenario = $l['scenario'] ?? $l['lesson_type'] ?? '?';
+            $entry = '  - [' . $scenario . '] ' . substr((string)$l['content'], 0, 300);
+            if (!empty($l['source_node_id'])) {
+                $entry .= ' (from: ' . substr((string)$l['source_node_id'], 0, 20) . ')';
+            }
+
+            if (($l['lesson_type'] ?? '') === 'negative') {
+                $negative[] = $entry;
+            } else {
+                $positive[] = $entry;
+            }
+        }
+
+        if (empty($positive) && empty($negative)) {
+            return '';
+        }
+
+        $parts = ["\nContext [Lessons from Ecosystem] (Cross-agent learned experience):"];
+        if (!empty($positive)) {
+            $parts[] = '  Strategies that WORKED:';
+            $parts[] = implode("\n", $positive);
+        }
+        if (!empty($negative)) {
+            $parts[] = '  Pitfalls to AVOID:';
+            $parts[] = implode("\n", $negative);
+        }
+        $parts[] = '  Apply relevant lessons. Ignore irrelevant ones.';
+
+        return implode("\n", $parts) . "\n";
+    }
+
+    /**
+     * 构建innovation catalyst block when stagnation is detected.
+     * PHP port of innovation block logic from prompt.js (lines 294-328).
+     */
+    private function buildInnovationBlock(array $signals): string
+    {
+        $stagnationSignals = [
+            'evolution_stagnation_detected',
+            'stable_success_plateau',
+            'repair_loop_detected',
+            'force_innovation_after_repair_loop',
+            'empty_cycle_loop_detected',
+            'evolution_saturation',
+        ];
+
+        $hasStagnation = false;
+        foreach ($signals as $s) {
+            if (in_array($s, $stagnationSignals, true)) {
+                $hasStagnation = true;
+                break;
+            }
+        }
+
+        if (!$hasStagnation) {
+            return '';
+        }
+
+        $ideas = Innovation::generateInnovationIdeas();
+        $block = '';
+
+        if (!empty($ideas)) {
+            $block = "\nContext [Innovation Catalyst] (Stagnation Detected - Consider These Ideas):\n";
+            $block .= implode("\n", $ideas) . "\n";
+        }
+
+        // Add strict stagnation directive for critical stagnation signals
+        $uniqueSignals = array_unique($signals);
+        if (in_array('evolution_stagnation_detected', $uniqueSignals, true)
+            || in_array('stable_success_plateau', $uniqueSignals, true)) {
+            $block .= "\n*** CRITICAL STAGNATION DIRECTIVE ***\n";
+            $block .= "System has detected stagnation (repetitive cycles or lack of progress).\n";
+            $block .= "You MUST choose INTENT: INNOVATE.\n";
+            $block .= "You MUST NOT choose repair or optimize unless there is a critical blocking error (log_error).\n";
+            $block .= "Prefer implementing one of the Innovation Catalyst ideas above.\n";
+        }
+
+        return $block;
+    }
+
+    /**
+     * 构建recent evolution history block.
+     * PHP port of history block logic from prompt.js (lines 329-338).
+     */
+    private function buildHistoryBlock(array $recentHistory): string
+    {
+        if (empty($recentHistory)) {
+            return '';
+        }
+
+        $lines = [];
+        foreach ($recentHistory as $i => $h) {
+            $intent = $h['intent'] ?? '?';
+            $historySignals = $h['signals'] ?? [];
+            $signalPreview = implode(', ', array_slice($historySignals, 0, 2));
+            $geneId = $h['gene_id'] ?? '?';
+            $outcomeStatus = $h['outcome']['status'] ?? '?';
+            $timestamp = $h['timestamp'] ?? '?';
+            $lines[] = "  " . ($i + 1) . ". [{$intent}] signals=[{$signalPreview}] gene={$geneId} outcome={$outcomeStatus} @{$timestamp}";
+        }
+
+        $block = "\nRecent Evolution History (last 8 cycles -- DO NOT repeat the same intent+signal+gene):\n";
+        $block .= implode("\n", $lines) . "\n";
+        $block .= "IMPORTANT: If you see 3+ consecutive \"repair\" cycles with the same gene, you MUST switch to \"innovate\" intent.";
+
+        return $block;
     }
 }

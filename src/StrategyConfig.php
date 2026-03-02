@@ -58,6 +58,12 @@ final class StrategyConfig
 
     private const STRATEGY_PRESETS = [
         'balanced' => [
+            'repair' => 0.20,
+            'optimize' => 0.30,
+            'innovate' => 0.50,
+            'repairLoopThreshold' => 0.50,
+            'label' => 'Balanced',
+            'description' => 'Normal operation. Steady growth with stability.',
             'mutation_weights' => [
                 'refactor' => 0.3,
                 'optimize' => 0.25,
@@ -70,6 +76,12 @@ final class StrategyConfig
             ],
         ],
         'innovate' => [
+            'repair' => 0.05,
+            'optimize' => 0.15,
+            'innovate' => 0.80,
+            'repairLoopThreshold' => 0.30,
+            'label' => 'Innovation Focus',
+            'description' => 'System is stable. Maximize new features and capabilities.',
             'mutation_weights' => [
                 'refactor' => 0.15,
                 'optimize' => 0.15,
@@ -82,6 +94,12 @@ final class StrategyConfig
             ],
         ],
         'harden' => [
+            'repair' => 0.40,
+            'optimize' => 0.40,
+            'innovate' => 0.20,
+            'repairLoopThreshold' => 0.70,
+            'label' => 'Hardening',
+            'description' => 'After a big change. Focus on stability and robustness.',
             'mutation_weights' => [
                 'refactor' => 0.35,
                 'optimize' => 0.25,
@@ -94,6 +112,12 @@ final class StrategyConfig
             ],
         ],
         'repair-only' => [
+            'repair' => 0.80,
+            'optimize' => 0.20,
+            'innovate' => 0.00,
+            'repairLoopThreshold' => 1.00,
+            'label' => 'Repair Only',
+            'description' => 'Emergency. Fix everything before doing anything else.',
             'mutation_weights' => [
                 'refactor' => 0.1,
                 'optimize' => 0.1,
@@ -103,6 +127,42 @@ final class StrategyConfig
             'quality_gates' => [
                 'min_confidence' => 0.5,
                 'min_gdi' => 0.3,
+            ],
+        ],
+        'early-stabilize' => [
+            'repair' => 0.60,
+            'optimize' => 0.25,
+            'innovate' => 0.15,
+            'repairLoopThreshold' => 0.80,
+            'label' => 'Early Stabilization',
+            'description' => 'First cycles. Prioritize fixing existing issues before innovating.',
+            'mutation_weights' => [
+                'refactor' => 0.2,
+                'optimize' => 0.15,
+                'innovate' => 0.1,
+                'repair' => 0.55,
+            ],
+            'quality_gates' => [
+                'min_confidence' => 0.5,
+                'min_gdi' => 0.4,
+            ],
+        ],
+        'steady-state' => [
+            'repair' => 0.60,
+            'optimize' => 0.30,
+            'innovate' => 0.10,
+            'repairLoopThreshold' => 0.90,
+            'label' => 'Steady State',
+            'description' => 'Evolution saturated. Maintain existing capabilities. Minimal innovation.',
+            'mutation_weights' => [
+                'refactor' => 0.3,
+                'optimize' => 0.35,
+                'innovate' => 0.05,
+                'repair' => 0.3,
+            ],
+            'quality_gates' => [
+                'min_confidence' => 0.7,
+                'min_gdi' => 0.6,
             ],
         ],
     ];
@@ -241,7 +301,7 @@ final class StrategyConfig
     /**
      * 获取cooldown configuration.
      */
-    public function getCooldown(string $key = null): mixed
+    public function getCooldown(?string $key = null): mixed
     {
         if ($key === null) {
             return $this->config['cooldown'] ?? [];
@@ -252,7 +312,7 @@ final class StrategyConfig
     /**
      * 获取blast radius configuration.
      */
-    public function getBlastRadius(string $key = null): mixed
+    public function getBlastRadius(?string $key = null): mixed
     {
         if ($key === null) {
             return $this->config['blast_radius'] ?? [];
@@ -263,7 +323,7 @@ final class StrategyConfig
     /**
      * 获取gene selection configuration.
      */
-    public function getGeneSelection(string $key = null): mixed
+    public function getGeneSelection(?string $key = null): mixed
     {
         if ($key === null) {
             return $this->config['gene_selection'] ?? [];
@@ -274,7 +334,7 @@ final class StrategyConfig
     /**
      * 获取safety configuration.
      */
-    public function getSafety(string $key = null): mixed
+    public function getSafety(?string $key = null): mixed
     {
         if ($key === null) {
             return $this->config['safety'] ?? [];
@@ -374,5 +434,118 @@ final class StrategyConfig
         }
 
         return $config;
+    }
+
+    /**
+     * Read cycle count from evolution state file.
+     */
+    private static function readCycleCount(): int
+    {
+        $candidates = [
+            // Local path (within evolver-php)
+            dirname(__DIR__) . '/memory/evolution_state.json',
+            // Workspace canonical path
+            dirname(__DIR__, 4) . '/memory/evolution/evolution_state.json',
+        ];
+
+        foreach ($candidates as $path) {
+            if (file_exists($path)) {
+                try {
+                    $data = json_decode(file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
+                    if (isset($data['cycleCount']) && is_numeric($data['cycleCount'])) {
+                        return (int) $data['cycleCount'];
+                    }
+                } catch (\Throwable) {
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * Resolve strategy with auto-detection heuristics.
+     * Inspired by Echo-MingXuan's \"fix first, innovate later\" pattern.
+     *
+     * @param array<string> $signals Current signals
+     * @return array Resolved strategy with name, label, description, etc.
+     */
+    public static function resolveStrategy(array $options = []): array
+    {
+        $signals = $options['signals'] ?? [];
+        $name = strtolower(trim($_ENV['EVOLVE_STRATEGY'] ?? $_ENV['EVOLVER_STRATEGY'] ?? 'balanced'));
+
+        // Backward compatibility: FORCE_INNOVATION=true maps to 'innovate'
+        if (!isset($_ENV['EVOLVE_STRATEGY']) && !isset($_ENV['EVOLVER_STRATEGY'])) {
+            $fi = strtolower($_ENV['FORCE_INNOVATION'] ?? $_ENV['EVOLVE_FORCE_INNOVATION'] ?? '');
+            if ($fi === 'true') {
+                $name = 'innovate';
+            }
+        }
+
+        // Auto-detection: when no explicit strategy is set (defaults to 'balanced'),
+        // apply heuristics inspired by \"fix first, innovate later\" pattern.
+        $isDefault = !isset($_ENV['EVOLVE_STRATEGY']) && !isset($_ENV['EVOLVER_STRATEGY'])
+            || $name === 'balanced' || $name === 'auto';
+
+        if ($isDefault) {
+            // Early-stabilize: first 5 cycles should focus on fixing existing issues.
+            $cycleCount = self::readCycleCount();
+            if ($cycleCount > 0 && $cycleCount <= 5) {
+                $name = 'early-stabilize';
+            }
+
+            // Saturation detection: if saturation signals are present, switch to steady-state.
+            if (in_array('force_steady_state', $signals, true)) {
+                $name = 'steady-state';
+            } elseif (in_array('evolution_saturation', $signals, true)) {
+                $name = 'steady-state';
+            }
+        }
+
+        // Explicit \"auto\" maps to whatever was auto-detected above (or balanced if no heuristic fired).
+        if ($name === 'auto') {
+            $name = 'balanced';
+        }
+
+        $strategy = self::STRATEGY_PRESETS[$name] ?? self::STRATEGY_PRESETS['balanced'];
+        $strategy['name'] = $name;
+
+        return $strategy;
+    }
+
+    /**
+     * Get available strategy names.
+     */
+    public static function getStrategyNames(): array
+    {
+        return array_keys(self::STRATEGY_PRESETS);
+    }
+
+    /**
+     * Get strategy label for display.
+     */
+    public function getLabel(): string
+    {
+        $strategy = $this->getStrategy();
+        return self::STRATEGY_PRESETS[$strategy]['label'] ?? $strategy;
+    }
+
+    /**
+     * Get strategy description.
+     */
+    public function getDescription(): string
+    {
+        $strategy = $this->getStrategy();
+        return self::STRATEGY_PRESETS[$strategy]['description'] ?? '';
+    }
+
+    /**
+     * Get repair loop threshold.
+     */
+    public function getRepairLoopThreshold(): float
+    {
+        $strategy = $this->getStrategy();
+        return self::STRATEGY_PRESETS[$strategy]['repairLoopThreshold'] ?? 0.50;
     }
 }

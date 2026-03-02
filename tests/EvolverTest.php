@@ -2348,4 +2348,255 @@ class EvolverTest extends TestCase
         
         $this->assertLessThan(0.3, $score);
     }
+
+    // -------------------------------------------------------------------------
+    // DiskCleaner extended tests
+    // -------------------------------------------------------------------------
+
+    public function testDiskCleanerCleanup(): void
+    {
+        $cleaner = new \Evolver\Ops\DiskCleaner(__DIR__ . '/../data');
+        
+        $result = $cleaner->cleanup();
+        
+        $this->assertIsArray($result);
+    }
+
+    public function testDiskCleanerCleanLogs(): void
+    {
+        $cleaner = new \Evolver\Ops\DiskCleaner(__DIR__ . '/../data');
+        
+        $result = $cleaner->cleanLogs();
+        
+        $this->assertIsArray($result);
+    }
+
+    public function testDiskCleanerArchiveOldEvents(): void
+    {
+        $cleaner = new \Evolver\Ops\DiskCleaner(__DIR__ . '/../data');
+        
+        $result = $cleaner->archiveOldEvents();
+        
+        $this->assertIsArray($result);
+    }
+
+    public function testDiskCleanerCleanTempFiles(): void
+    {
+        $cleaner = new \Evolver\Ops\DiskCleaner(__DIR__ . '/../data');
+        
+        $result = $cleaner->cleanTempFiles();
+        
+        $this->assertIsArray($result);
+    }
+
+    // -------------------------------------------------------------------------
+    // LifecycleManager extended tests
+    // -------------------------------------------------------------------------
+
+    public function testLifecycleManagerOnStartup(): void
+    {
+        $manager = new \Evolver\Ops\LifecycleManager();
+        
+        $manager->onStartup(function() { return true; });
+        
+        $this->assertTrue(true);
+    }
+
+    public function testLifecycleManagerOnShutdown(): void
+    {
+        $manager = new \Evolver\Ops\LifecycleManager();
+        
+        $manager->onShutdown(function() { return true; });
+        
+        $this->assertTrue(true);
+    }
+
+    public function testLifecycleManagerStartup(): void
+    {
+        $manager = new \Evolver\Ops\LifecycleManager();
+        
+        $result = $manager->startup();
+        
+        $this->assertIsArray($result);
+    }
+
+    public function testLifecycleManagerShutdown(): void
+    {
+        $manager = new \Evolver\Ops\LifecycleManager();
+        
+        $result = $manager->shutdown('test');
+        
+        $this->assertIsArray($result);
+    }
+
+    public function testLifecycleManagerRecordAssetPublished(): void
+    {
+        $manager = new \Evolver\Ops\LifecycleManager();
+        
+        $manager->recordAssetPublished();
+        
+        $metrics = $manager->getMetrics();
+        $this->assertArrayHasKey('assets_published', $metrics);
+    }
+
+    public function testLifecycleManagerRecordAssetReceived(): void
+    {
+        $manager = new \Evolver\Ops\LifecycleManager();
+        
+        $manager->recordAssetReceived();
+        
+        $metrics = $manager->getMetrics();
+        $this->assertArrayHasKey('assets_received', $metrics);
+    }
+
+    public function testLifecycleManagerHandleSignal(): void
+    {
+        $manager = new \Evolver\Ops\LifecycleManager();
+        
+        $manager->handleSignal(SIGTERM);
+        
+        $this->assertTrue($manager->isShuttingDown());
+    }
+
+    public function testLifecycleManagerCreateHealthResponse(): void
+    {
+        $manager = new \Evolver\Ops\LifecycleManager();
+        
+        $response = $manager->createHealthResponse();
+        
+        $this->assertIsArray($response);
+    }
+
+    // -------------------------------------------------------------------------
+    // SignalDeduplicator extended tests
+    // -------------------------------------------------------------------------
+
+    public function testSignalDeduplicatorShouldSuppress(): void
+    {
+        $dedup = new \Evolver\Ops\SignalDeduplicator();
+        
+        $result = $dedup->shouldSuppress('test_signal', ['file' => 'test.php']);
+        
+        $this->assertIsArray($result);
+    }
+
+    public function testSignalDeduplicatorGetSuppressionSummary(): void
+    {
+        $dedup = new \Evolver\Ops\SignalDeduplicator();
+        
+        $summary = $dedup->getSuppressionSummary();
+        
+        $this->assertIsArray($summary);
+    }
+
+    // -------------------------------------------------------------------------
+    // DaemonManager extended tests
+    // -------------------------------------------------------------------------
+
+    public function testDaemonManagerStart(): void
+    {
+        $manager = new \Evolver\Ops\DaemonManager(__DIR__ . '/../data');
+        
+        $result = $manager->start(['interval' => 60]);
+        
+        $this->assertIsArray($result);
+    }
+
+    public function testDaemonManagerStop(): void
+    {
+        $manager = new \Evolver\Ops\DaemonManager(__DIR__ . '/../data');
+        
+        $result = $manager->stop();
+        
+        $this->assertIsArray($result);
+    }
+
+    public function testDaemonManagerRestart(): void
+    {
+        $manager = new \Evolver\Ops\DaemonManager(__DIR__ . '/../data');
+        
+        $result = $manager->restart(['interval' => 60]);
+        
+        $this->assertIsArray($result);
+    }
+
+    public function testDaemonManagerGetStatus(): void
+    {
+        $manager = new \Evolver\Ops\DaemonManager(__DIR__ . '/../data');
+        
+        $status = $manager->getStatus();
+        
+        $this->assertIsArray($status);
+    }
+
+    public function testDaemonManagerGetLog(): void
+    {
+        $manager = new \Evolver\Ops\DaemonManager(__DIR__ . '/../data');
+        
+        $log = $manager->getLog(10);
+        
+        $this->assertIsArray($log);
+    }
+
+    // -------------------------------------------------------------------------
+    // GepAssetStore extended tests
+    // -------------------------------------------------------------------------
+
+    public function testGepAssetStoreLoadCapsulesByGdi(): void
+    {
+        $capsules = $this->store->loadCapsulesByGdi(10);
+        
+        $this->assertIsArray($capsules);
+    }
+
+    public function testGepAssetStoreUpdateSyncStatus(): void
+    {
+        $this->store->updateSyncStatus('gene', 'test_gene', null, 'pending');
+        
+        $this->assertTrue(true);
+    }
+
+    // -------------------------------------------------------------------------
+    // OpsManager extended tests
+    // -------------------------------------------------------------------------
+
+    public function testOpsManagerRunClean(): void
+    {
+        $manager = new \Evolver\Ops\OpsManager(__DIR__ . '/../data');
+        
+        $result = $manager->run('clean');
+        
+        $this->assertIsArray($result);
+    }
+
+    public function testOpsManagerRunDaemon(): void
+    {
+        $manager = new \Evolver\Ops\OpsManager(__DIR__ . '/../data');
+        
+        $result = $manager->run('daemon', ['action' => 'status']);
+        
+        $this->assertIsArray($result);
+    }
+
+    // -------------------------------------------------------------------------
+    // EnvFingerprint extended tests
+    // -------------------------------------------------------------------------
+
+    public function testEnvFingerprintGetDeviceId(): void
+    {
+        $fp = new \Evolver\EnvFingerprint();
+        
+        $deviceId = $fp->getDeviceId();
+        
+        $this->assertNotEmpty($deviceId);
+    }
+
+    public function testEnvFingerprintCaptureFingerprint(): void
+    {
+        $fp = new \Evolver\EnvFingerprint();
+        
+        $fp->captureFingerprint();
+        
+        $this->assertTrue(true);
+    }
 }

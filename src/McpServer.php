@@ -461,7 +461,7 @@ final class McpServer
         $blastRadius = $args['blastRadius'] ?? ['files' => 0, 'lines' => 0];
         $files = $args['modifiedFiles'] ?? [];
         
-        $modification检查= $this->safetyController->validateModification([
+        $modificationCheck = $this->safetyController->validateModification([
             'files' => $files,
             'lines' => $blastRadius['lines'] ?? 0,
             'gene' => $args['gene'] ?? null,
@@ -485,7 +485,7 @@ final class McpServer
         $eventData = $args['event'] ?? null;
         $mutationData = $args['mutation'] ?? null;
         $personalityState = $args['personalityState'] ?? null;
-        $dry运行= (bool)($args['dryRun'] ?? false);
+        $dryRun = (bool)($args['dryRun'] ?? false);
         $gepOutput = $args['gepOutput'] ?? null;
 
         // Handle approval/rejection in review mode

@@ -55,7 +55,7 @@ final class DiskCleaner
         $results['space_freed_bytes'] += $tempResult['bytes_freed'];
 
         // 检查disk space
-        $space检查= $this->checkDiskSpace();
+        $spaceCheck = $this->checkDiskSpace();
         $results['disk_space_ok'] = $spaceCheck['ok'];
         $results['free_space_mb'] = $spaceCheck['free_mb'];
 

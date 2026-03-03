@@ -290,7 +290,7 @@ final class EvoMapClient
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
-        curl_close($ch);
+        // Note: curl_close() is deprecated in PHP 8.5 - handle auto-closed when unset
 
         if ($error) {
             $this->lastError = 'Curl error: ' . $error;

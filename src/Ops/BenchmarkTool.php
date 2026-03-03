@@ -81,7 +81,7 @@ final class BenchmarkTool
     public function benchmarkSignalExtraction(): array
     {
         $extractor = new \Evolver\SignalExtractor();
-        $context = $this->generateTestContext();
+        $context = $this->generateTestContextArray();
 
         $start = hrtime(true);
         for ($i = 0; $i < $this->iterations; $i++) {
@@ -260,6 +260,20 @@ at Object.<anonymous> (/app/index.js:45:12)
 [INFO] Application started on port 3000
 [WARN] Memory usage above 80%
 CONTEXT;
+    }
+
+    /**
+     * Generate test context as array for SignalExtractor.
+     */
+    private function generateTestContextArray(): array
+    {
+        return [
+            'context' => '[ERROR] TypeError: Cannot read property \'undefined\' of null
+at Module._compile (internal/modules/cjs/loader.js:1180:45)
+[INFO] Application started on port 3000
+[WARN] Memory usage above 80%',
+            'session' => 'benchmark_session',
+        ];
     }
 
     /**

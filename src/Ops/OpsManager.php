@@ -61,7 +61,7 @@ final class OpsManager
     {
         $cleaner = new DiskCleaner($this->dataDir);
 
-        $dry运行= $opts['dry-run'] ?? $opts['dry_run'] ?? false;
+        $dryRun = $opts['dry-run'] ?? $opts['dry_run'] ?? false;
         if ($dryRun) {
             $stats = $cleaner->getStats();
             return [
@@ -172,7 +172,7 @@ final class OpsManager
             return ['ok' => false, 'error' => 'Database not available'];
         }
 
-        $dry运行= $opts['dry-run'] ?? $opts['dry_run'] ?? false;
+        $dryRun = $opts['dry-run'] ?? $opts['dry_run'] ?? false;
         $maxAgeDays = (int)($opts['max_age_days'] ?? 90);
         $maxEvents = (int)($opts['max_events'] ?? 1000);
 

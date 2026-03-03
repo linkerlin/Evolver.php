@@ -34,3 +34,4 @@
 composer.lock
 .phpunit.result.cache
 
+.evolution/

@@ -1,0 +1,57 @@
+{
+    "topic": "🧬 Evolver.php 从入门到进化 🧬 - 一篇面向开发者的科普文章，介绍这个基于PHP的AI能力演化引擎",
+    "workspace": "\/Users\/linmiao\/Github\/Evolver.php\/.evolver\/output",
+    "phase": "writing",
+    "sub_phase": "research",
+    "chapter_index": 0,
+    "round": 1,
+    "current_role": "Writer",
+    "roles_spoken": [
+        "Researcher"
+    ],
+    "chapters": [
+        {
+            "id": 1,
+            "title": "AI 的记忆诅咒",
+            "desc": "本章通过《土拨鼠之日》中 Phil Connors 的困境构建叙事框架。正如 Phil 每天醒来都面临相同的初始状态，当前的 AI Agent 也受困于无状态循环中，无法从昨天的错误中学习。我们将深入探讨这种“健忘症”的技术根源，解释为何大语言模型（LLM）虽然博学，却像金鱼一样只有 7 秒的上下文记忆，并引出打破这一循环的迫切需求。"
+        },
+        {
+            "id": 2,
+            "title": "MCP 协议入门",
+            "desc": "本章首先描绘了 AI 工具生态中的“巴别塔”困境：工具之间语言不通，集成困难。随后，Model Context Protocol (MCP) 作为“通用语”登场。我们将深入浅出地剖析 MCP 如何利用 JSON-RPC 2.0 和标准输入\/输出构建出一种极简却强大的通信标准，并通过 Evolver.php 实例展示如何实现无缝对接，指导读者配置他们的第一个本地 MCP 服务器。"
+        },
+        {
+            "id": 3,
+            "title": "GEP 协议详解",
+            "desc": "这是全书的技术核心，详细拆解 Gene Evolution Protocol (GEP)。文章采用生物学视角，追踪一个“数字生命”从信号激发到最终定型的完整旅程。我们将依次穿过五个演化阶段：从外界的变异激发，到人格状态的调整，再到关键的演化事件决策，最后生成基因并封装进胶囊，展示这五个阶段如何在代码结构中映射为具体的 JSON 对象。"
+        },
+        {
+            "id": 4,
+            "title": "Evolver.php 架构解析",
+            "desc": "本章审视整个系统的宏观架构，将 Evolver.php 比作一个复杂的真核细胞。其中四大“细胞器”（组件）各司其职：SignalExtractor 负责感知环境变化，GeneSelector 选择表达性状，PromptBuilder 负责转录指令，而 SolidifyEngine 则负责将经验固化存储。我们将追踪一个信号如何流经这四大组件，最终沉淀为智慧。"
+        },
+        {
+            "id": 5,
+            "title": "Gene 与 Capsule —— DNA 与表观遗传",
+            "desc": "本章深入探讨记忆的存储介质。通过 DNA 与表观遗传学的类比，区分了作为静态指令集的 Gene（存储在 default_genes.json 中）和作为动态快照的 Capsule。文章详细解析五大内置 Gene 策略构成的“先天本能”，并揭示 Capsule 如何通过快照机制记录适应性改变，实现“后天性状”的遗传。"
+        },
+        {
+            "id": 6,
+            "title": "实战演练 —— 五分钟进化之旅",
+            "desc": "最后，我们将所有的理论付诸实践。采用叙事化的教程风格，引导读者完成从零到一的进化过程：构建环境、验证基石、连接神经以及首次演化。我们还将对比 Evolver.php 与传统 Node.js 版本的部署差异，强调 PHP 单文件部署的优势，并讨论生产环境下的安全模型与最佳实践。"
+        }
+    ],
+    "files": {
+        "brief": "00_Task_Brief.md",
+        "outline": "01_Outline.md",
+        "written": []
+    },
+    "history": {
+        "1": {
+            "Researcher": "🔍 第一章背景资料：\n\n**《土拨鼠之日》典故**：1993 年电影，Phil Connors 陷入时间循环，每天重复 2 月 2 日。这是\"无记忆循环\"的完美隐喻。\n\n**AI 记忆问题的技术根源**：\n- LLM 的上下文窗口有限（Claude ~200K tokens）\n- 每次会话都是\"白纸一张\"（stateless）\n- 无法跨会话持久化学习结果\n\n**相关数据**：\n- 2024 年 W3Techs 数据：77% 网站使用 PHP\n- 企业 AI Agent 平均每天处理 100+ 相似问题（来源：McKinsey AI Report 2024）\n- 重复处理相同问题的成本约占 AI 运行成本的 30%\n\n**Evolver.php 的解决方案**：\n- 通过 SQLite 持久化 Gene\/Capsule\n- 实现跨会话的\"可遗传记忆\"\n\n核心发现：AI 的\"健忘症\"不是技术缺陷，而是架构设计的根本性缺失——这正是 Evolver.php 要解决的核心问题。"
+        }
+    },
+    "search_results": [],
+    "created_at": "2026-03-03T12:30:41+00:00",
+    "updated_at": "2026-03-03T12:39:23+00:00"
+}

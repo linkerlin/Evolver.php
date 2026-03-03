@@ -43,7 +43,7 @@ Evolver.php/
 ├── tests/              # PHPUnit 测试 (命名空间 Evolver\Tests\)
 ├── data/               # 默认 genes JSON 文件
 ├── vendor/             # Composer 依赖 (已忽略)
-├── .rlm-gepa/          # RLM-GEPA 智能体记忆和上下文存储 (非核心部分)
+├── .evolver/          # evolver 智能体记忆和上下文存储 (非核心部分)
 ├── evolver.php         # 主入口点 (MCP stdio 服务器)
 ├── composer.json       # 项目配置和自动加载
 ├── phpunit.xml         # PHPUnit 配置
@@ -118,8 +118,8 @@ Evolver.php/
   5. `Capsule`
 - 缺少任何对象都会导致协议失败。
 
-### RLM-GEPA 智能体集成
-- `.rlm-gepa/` 目录存储 RLM-GEPA 递归语言模型智能体的记忆、上下文和输出
+### evolver 智能体集成
+- `.evolver/` 目录存储 evolver 递归语言模型智能体的记忆、上下文和输出
 - 这与核心 Evolver 引擎分离，用于智能体特定实验
 
 ## 环境变量

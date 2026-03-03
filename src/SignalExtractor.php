@@ -475,6 +475,281 @@ final class SignalExtractor
     }
 
     // -------------------------------------------------------------------------
+    // Multi-source signal fusion (Task 1.2)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Extract signals from multiple sources and merge them.
+     * Sources can include: session_logs, today_logs, memory_snippets, user_snippets, etc.
+     *
+     * @param array<string, string> $sources Map of source name to content
+     * @return array<string, mixed> Merged signals with source attribution
+     */
+    public function extractFromMultipleSources(array $sources): array
+    {
+        $allSignals = [];
+        $sourceSignals = [];
+
+        foreach ($sources as $sourceName => $content) {
+            if (empty($content)) {
+                continue;
+            }
+
+            $signals = $this->extract(['context' => $content]);
+            $sourceSignals[$sourceName] = $signals;
+
+            foreach ($signals as $signal) {
+                if (!isset($allSignals[$signal])) {
+                    $allSignals[$signal] = [
+                        'signal' => $signal,
+                        'sources' => [],
+                        'count' => 0,
+                    ];
+                }
+                $allSignals[$signal]['sources'][] = $sourceName;
+                $allSignals[$signal]['count']++;
+            }
+        }
+
+        // Sort by count (most frequent first)
+        uasort($allSignals, fn($a, $b) => $b['count'] <=> $a['count']);
+
+        return [
+            'signals' => array_keys($allSignals),
+            'detailed' => array_values($allSignals),
+            'by_source' => $sourceSignals,
+        ];
+    }
+
+    /**
+     * Parse session transcript and extract structured data.
+     * Extracts messages, tool calls, tool results, and errors.
+     *
+     * @return array{
+     *   messages: array,
+     *   tool_calls: array,
+     *   tool_results: array,
+     *   errors: array,
+     *   metadata: array
+     * }
+     */
+    public function parseSessionTranscript(string $log): array
+    {
+        $lines = array_filter(array_map('trim', explode("\n", $log)));
+        
+        $messages = [];
+        $toolCalls = [];
+        $toolResults = [];
+        $errors = [];
+        $metadata = [
+            'total_lines' => count($lines),
+            'has_errors' => false,
+            'timestamp_range' => null,
+        ];
+
+        foreach ($lines as $line) {
+            // Try to parse as JSON first
+            $data = json_decode($line, true);
+            if (is_array($data)) {
+                // Extract message
+                if (isset($data['message']) || isset($data['content'])) {
+                    $messages[] = [
+                        'type' => 'message',
+                        'role' => $data['role'] ?? 'unknown',
+                        'content' => $data['message']['content'] ?? $data['content'] ?? '',
+                        'timestamp' => $data['timestamp'] ?? null,
+                    ];
+                }
+
+                // Extract tool calls
+                if (isset($data['tool_calls']) || isset($data['tool_call'])) {
+                    $calls = $data['tool_calls'] ?? [$data['tool_call']];
+                    foreach ((array)$calls as $call) {
+                        $toolCalls[] = [
+                            'name' => is_array($call) ? ($call['name'] ?? 'unknown') : (string)$call,
+                            'args' => is_array($call) ? ($call['args'] ?? []) : [],
+                            'timestamp' => $data['timestamp'] ?? null,
+                        ];
+                    }
+                }
+
+                // Extract tool results
+                if (isset($data['tool_results']) || isset($data['tool_result'])) {
+                    $results = $data['tool_results'] ?? [$data['tool_result']];
+                    foreach ((array)$results as $result) {
+                        $toolResults[] = [
+                            'status' => is_array($result) ? ($result['status'] ?? 'unknown') : 'unknown',
+                            'content' => is_array($result) ? json_encode($result) : (string)$result,
+                            'timestamp' => $data['timestamp'] ?? null,
+                        ];
+                    }
+                }
+
+                // Extract errors
+                if (isset($data['error']) || isset($data['errorMessage'])) {
+                    $errorMsg = $data['errorMessage'] ?? (is_array($data['error']) ? ($data['error']['message'] ?? json_encode($data['error'])) : (string)$data['error']);
+                    $errors[] = [
+                        'message' => $errorMsg,
+                        'timestamp' => $data['timestamp'] ?? null,
+                    ];
+                    $metadata['has_errors'] = true;
+                }
+            } else {
+                // Try regex patterns for non-JSON lines
+                if (preg_match('/\[TOOL:\s*([^\]]+)\]/i', $line, $m)) {
+                    $toolCalls[] = [
+                        'name' => trim($m[1]),
+                        'args' => [],
+                        'timestamp' => null,
+                    ];
+                }
+
+                if (preg_match('/\[error\]|error:|exception:/i', $line)) {
+                    $errors[] = [
+                        'message' => substr($line, 0, 500),
+                        'timestamp' => null,
+                    ];
+                    $metadata['has_errors'] = true;
+                }
+            }
+        }
+
+        return [
+            'messages' => $messages,
+            'tool_calls' => $toolCalls,
+            'tool_results' => $toolResults,
+            'errors' => $errors,
+            'metadata' => $metadata,
+        ];
+    }
+
+    /**
+     * Detect repair loop from recent events.
+     * Returns the type of loop detected or null if no loop.
+     */
+    public function detectRepairLoop(array $recentEvents): ?string
+    {
+        if (empty($recentEvents)) {
+            return null;
+        }
+
+        $history = $this->analyzeRecentHistory($recentEvents);
+
+        // Check for repair loop
+        if ($history['consecutiveRepairCount'] >= self::FORCE_INNOVATION_THRESHOLD) {
+            return 'force_innovation_required';
+        }
+
+        if ($history['consecutiveRepairCount'] >= self::REPAIR_LOOP_THRESHOLD) {
+            return 'repair_loop_detected';
+        }
+
+        // Check for stagnation
+        if ($history['consecutiveEmptyCycles'] >= 5) {
+            return 'evolution_saturation';
+        }
+
+        if ($history['consecutiveEmptyCycles'] >= self::STAGNATION_THRESHOLD) {
+            return 'evolution_stagnation_detected';
+        }
+
+        // Check for failure streak
+        if ($history['consecutiveFailureCount'] >= 5) {
+            return 'failure_loop_detected';
+        }
+
+        if ($history['recentFailureRatio'] >= self::FAILURE_RATIO_THRESHOLD) {
+            return 'high_failure_ratio';
+        }
+
+        // Check for oscillation
+        if ($history['oscillationCount'] >= self::OSCILLATION_THRESHOLD) {
+            return 'signal_oscillation_detected';
+        }
+
+        return null;
+    }
+
+    /**
+     * Deduplicate and fold similar signals.
+     * Groups related signals and provides frequency counts.
+     *
+     * @return array<int, array{signal: string, folded: bool, count: int, related: array}>
+     */
+    public function deduplicateSignals(array $signals): array
+    {
+        if (empty($signals)) {
+            return [];
+        }
+
+        $groups = [];
+        $result = [];
+
+        foreach ($signals as $signal) {
+            // Normalize signal for grouping
+            $normalized = $this->normalizeSignalForGrouping($signal);
+            
+            if (!isset($groups[$normalized])) {
+                $groups[$normalized] = [
+                    'canonical' => $signal,
+                    'count' => 0,
+                    'variants' => [],
+                ];
+            }
+            
+            $groups[$normalized]['count']++;
+            if ($signal !== $groups[$normalized]['canonical']) {
+                $groups[$normalized]['variants'][] = $signal;
+            }
+        }
+
+        foreach ($groups as $normalized => $group) {
+            $result[] = [
+                'signal' => $group['canonical'],
+                'folded' => $group['count'] > 1,
+                'count' => $group['count'],
+                'related' => array_unique($group['variants']),
+            ];
+        }
+
+        // Sort by count descending
+        usort($result, fn($a, $b) => $b['count'] <=> $a['count']);
+
+        return $result;
+    }
+
+    /**
+     * Normalize signal for grouping purposes.
+     */
+    private function normalizeSignalForGrouping(string $signal): string
+    {
+        // Remove dynamic parts like timestamps, line numbers, etc.
+        $normalized = $signal;
+        
+        // Normalize errsig:* signals
+        if (str_starts_with($signal, 'errsig:')) {
+            return 'errsig:generic';
+        }
+        
+        // Normalize recurring_errsig:* signals
+        if (str_starts_with($signal, 'recurring_errsig')) {
+            return 'recurring_errsig:generic';
+        }
+
+        // Normalize consecutive_failure_streak_* signals
+        if (preg_match('/^consecutive_failure_streak_\d+$/', $signal)) {
+            return 'consecutive_failure_streak';
+        }
+
+        // Normalize user_feature_request:* signals
+        if (str_starts_with($signal, 'user_feature_request:')) {
+            return 'user_feature_request';
+        }
+
+        return $signal;
+    }
+
+    // -------------------------------------------------------------------------
     // Multi-language signal extraction helpers
     // -------------------------------------------------------------------------
 

@@ -12,7 +12,6 @@ use Evolver\Ops\Innovation;
  */
 final class PromptBuilder
 {
-    private const SCHEMA_VERSION = '1.5.0';
     private const TRUNCATE_CONTEXT_MAX = 20000;
 
     /** Mandatory GEP output schema definition */
@@ -52,7 +51,7 @@ ENSURE VALID JSON SYNTAX (escape quotes in strings).
 2. EvolutionEvent (The Record)
    {
      "type": "EvolutionEvent",
-     "schema_version": "1.5.0",
+     "schema_version": "1.6.0",
      "id": "evt_<timestamp>",
      "parent": <parent_evt_id|null>,
      "intent": "repair|optimize|innovate",
@@ -68,7 +67,7 @@ ENSURE VALID JSON SYNTAX (escape quotes in strings).
    - Reuse/update existing ID if possible. 创建new only if novel pattern.
    {
      "type": "Gene",
-     "schema_version": "1.5.0",
+     "schema_version": "1.6.0",
      "id": "gene_<name>",
      "category": "repair|optimize|innovate",
      "signals_match": ["<pattern>"],
@@ -82,7 +81,7 @@ ENSURE VALID JSON SYNTAX (escape quotes in strings).
    - Only on success. Reference Gene used.
    {
      "type": "Capsule",
-     "schema_version": "1.5.0",
+     "schema_version": "1.6.0",
      "id": "capsule_<timestamp>",
      "trigger": ["<signal_string>"],
      "gene": "<gene_id>",
@@ -523,5 +522,211 @@ SCHEMA;
         $block .= "IMPORTANT: If you see 3+ consecutive \"repair\" cycles with the same gene, you MUST switch to \"innovate\" intent.";
 
         return $block;
+    }
+
+    // -------------------------------------------------------------------------
+    // Task 1.3: Hub matching and health report (Prompt Builder enhancements)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Build Hub matched block for cross-agent solutions.
+     * Displays solutions found on EvoMap Hub that match current signals.
+     *
+     * @param array<int, array{id: string, gene: string, summary: string, confidence: float, source_node: string}> $hubResults
+     */
+    public function buildHubMatchedBlock(array $hubResults): string
+    {
+        if (empty($hubResults)) {
+            return '(no hub match)';
+        }
+
+        $lines = ["Context [Hub Matched Solutions] (Cross-agent verified solutions):"];
+
+        foreach (array_slice($hubResults, 0, 3) as $idx => $result) {
+            $id = $result['id'] ?? 'unknown';
+            $gene = $result['gene'] ?? 'unknown';
+            $summary = $result['summary'] ?? '(no summary)';
+            $confidence = $result['confidence'] ?? 0;
+            $source = $result['source_node'] ?? 'unknown';
+
+            $lines[] = "  " . ($idx + 1) . ". Asset: {$id}";
+            $lines[] = "     Gene: {$gene} | Confidence: {$confidence} | Source: {$source}";
+            $lines[] = "     Summary: " . substr($summary, 0, 200);
+        }
+
+        if (count($hubResults) > 3) {
+            $lines[] = "  ... (" . (count($hubResults) - 3) . " more matches)";
+        }
+
+        $lines[] = "  Consider these verified solutions from other agents.";
+
+        return implode("\n", $lines) . "\n";
+    }
+
+    /**
+     * Build health report block for system status.
+     * Shows current system health metrics and warnings.
+     *
+     * @param array{
+     *   status?: string,
+     *   success_rate?: float,
+     *   recent_failures?: int,
+     *   active_cycles?: int,
+     *   warnings?: array<string>
+     * } $health
+     */
+    public function buildHealthReport(array $health): string
+    {
+        $status = $health['status'] ?? 'unknown';
+        $successRate = $health['success_rate'] ?? 0.0;
+        $recentFailures = $health['recent_failures'] ?? 0;
+        $activeCycles = $health['active_cycles'] ?? 0;
+        $warnings = $health['warnings'] ?? [];
+
+        $lines = ["Context [System Health Report]:"];
+        $lines[] = "  Status: {$status}";
+        $lines[] = "  Recent Success Rate: " . round($successRate * 100, 1) . "%";
+        $lines[] = "  Recent Failures: {$recentFailures}";
+        $lines[] = "  Active Evolution Cycles: {$activeCycles}";
+
+        if (!empty($warnings)) {
+            $lines[] = "  Warnings:";
+            foreach (array_slice($warnings, 0, 5) as $warning) {
+                $lines[] = "    - {$warning}";
+            }
+        }
+
+        return implode("\n", $lines) . "\n";
+    }
+
+    /**
+     * Build mutation directive based on signals and context.
+     * Generates specific guidance for the mutation strategy.
+     *
+     * @param array<string> $signals
+     * @param array{repair_loop?: bool, stagnation?: bool, saturation?: bool} $context
+     */
+    public function buildMutationDirective(array $signals, array $context = []): string
+    {
+        $directives = [];
+
+        // Check for repair loop
+        if ($context['repair_loop'] ?? false) {
+            $directives[] = "REPAIR LOOP DETECTED: Switch to INNOVATE intent immediately.";
+            $directives[] = "Explore alternative approaches, not incremental fixes.";
+        }
+
+        // Check for stagnation
+        if ($context['stagnation'] ?? false) {
+            $directives[] = "STAGNATION DETECTED: Current approach exhausted.";
+            $directives[] = "Consider radical changes or new capability acquisition.";
+        }
+
+        // Check for saturation
+        if ($context['saturation'] ?? false) {
+            $directives[] = "EVOLUTION SATURATION: Gene space fully explored.";
+            $directives[] = "Focus on consolidation and optimization.";
+        }
+
+        // Check for opportunity signals
+        if ($this->hasOpportunitySignals($signals)) {
+            $directives[] = "OPPORTUNITY DETECTED: User-initiated improvement possible.";
+            $directives[] = "Consider user feature requests and improvement suggestions.";
+        }
+
+        // Default directive
+        if (empty($directives)) {
+            $directives[] = "Standard evolution: Follow selected gene strategy.";
+            $directives[] = "Make minimal, safe changes with proper validation.";
+        }
+
+        $block = "*** MUTATION DIRECTIVE ***\n";
+        $block .= implode("\n", $directives) . "\n";
+
+        return $block;
+    }
+
+    /**
+     * Build mood/awareness block for personality state.
+     * Adds emotional context to the prompt.
+     *
+     * @param array{rigor?: float, creativity?: float, risk_tolerance?: float} $personality
+     */
+    public function buildMoodBlock(array $personality): string
+    {
+        $rigor = $personality['rigor'] ?? 0.5;
+        $creativity = $personality['creativity'] ?? 0.5;
+        $riskTolerance = $personality['risk_tolerance'] ?? 0.5;
+
+        $mood = "balanced";
+        $description = "Standard approach recommended.";
+
+        if ($rigor > 0.7 && $riskTolerance < 0.4) {
+            $mood = "cautious";
+            $description = "High rigor, low risk tolerance. Prioritize safety and validation.";
+        } elseif ($creativity > 0.7 && $riskTolerance > 0.6) {
+            $mood = "exploratory";
+            $description = "High creativity and risk tolerance. Explore novel solutions.";
+        } elseif ($rigor < 0.4) {
+            $mood = "relaxed";
+            $description = "Lower rigor. Focus on quick iterations.";
+        }
+
+        $block = "Context [Mood Awareness]:\n";
+        $block .= "  Current Mood: {$mood}\n";
+        $block .= "  Description: {$description}\n";
+        $block .= "  Parameters: rigor={$rigor}, creativity={$creativity}, risk={$riskTolerance}\n";
+
+        return $block;
+    }
+
+    /**
+     * Format skills list for prompt inclusion.
+     *
+     * @param array<int, array{name: string, category?: string, status?: string}> $skills
+     */
+    public function formatSkillsList(array $skills): string
+    {
+        if (empty($skills)) {
+            return '(no skills available)';
+        }
+
+        $lines = [];
+        foreach (array_slice($skills, 0, 10) as $skill) {
+            $name = $skill['name'] ?? 'unknown';
+            $category = $skill['category'] ?? 'general';
+            $status = $skill['status'] ?? 'active';
+            $lines[] = "- {$name} [{$category}] ({$status})";
+        }
+
+        if (count($skills) > 10) {
+            $lines[] = '... (' . (count($skills) - 10) . ' more)';
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * Check if any opportunity signals are present.
+     *
+     * @param array<string> $signals
+     */
+    private function hasOpportunitySignals(array $signals): bool
+    {
+        $opportunitySignals = [
+            'user_feature_request',
+            'user_improvement_suggestion',
+            'external_opportunity',
+        ];
+
+        foreach ($signals as $signal) {
+            foreach ($opportunitySignals as $opp) {
+                if (str_starts_with($signal, $opp)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

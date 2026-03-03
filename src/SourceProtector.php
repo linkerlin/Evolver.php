@@ -212,8 +212,9 @@ final class SourceProtector
         $quoted = preg_quote($pattern, '#');
         // Replace escaped wildcards with regex equivalents
         $regexPattern = str_replace(['\\*', '\\?'], ['.*', '.'], $quoted);
-        // Replace directory separators (both forward and backslash)
-        $regexPattern = str_replace(['/', '\\\\'], '[/\\\\]', $regexPattern);
+        // Replace directory separators to match both forward and backslash
+        // Use [\\/] character class (backslash must be first in the class)
+        $regexPattern = str_replace('/', '[\\\\/]', $regexPattern);
         
         $regex = '#^' . $regexPattern . '$#';
 

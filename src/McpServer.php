@@ -227,15 +227,32 @@ final class McpServer
         }
 
         try {
+            // Validate input parameters before passing to tool handlers
+            $validatedArgs = match ($toolName) {
+                'evolver_run' => InputValidator::validateEvolverRun($arguments),
+                'evolver_solidify' => InputValidator::validateEvolverSolidify($arguments),
+                'evolver_extract_signals' => InputValidator::validateEvolverExtractSignals($arguments),
+                'evolver_list_genes' => InputValidator::validateEvolverListGenes($arguments),
+                'evolver_list_capsules' => InputValidator::validateEvolverListCapsules($arguments),
+                'evolver_list_events' => InputValidator::validateEvolverListEvents($arguments),
+                'evolver_upsert_gene' => InputValidator::validateEvolverUpsertGene($arguments),
+                'evolver_delete_gene' => InputValidator::validateEvolverDeleteGene($arguments),
+                'evolver_stats' => [],
+                'evolver_safety_status' => [],
+                'evolver_cleanup' => [],
+                'evolver_sync_to_hub' => [],
+                default => throw new \InvalidArgumentException("Unknown tool: {$toolName}"),
+            };
+
             $result = match ($toolName) {
-                'evolver_run' => $this->toolEvolverRun($arguments),
-                'evolver_solidify' => $this->toolEvolverSolidify($arguments),
-                'evolver_extract_signals' => $this->toolEvolverExtractSignals($arguments),
-                'evolver_list_genes' => $this->toolEvolverListGenes($arguments),
-                'evolver_list_capsules' => $this->toolEvolverListCapsules($arguments),
-                'evolver_list_events' => $this->toolEvolverListEvents($arguments),
-                'evolver_upsert_gene' => $this->toolEvolverUpsertGene($arguments),
-                'evolver_delete_gene' => $this->toolEvolverDeleteGene($arguments),
+                'evolver_run' => $this->toolEvolverRun($validatedArgs),
+                'evolver_solidify' => $this->toolEvolverSolidify($validatedArgs),
+                'evolver_extract_signals' => $this->toolEvolverExtractSignals($validatedArgs),
+                'evolver_list_genes' => $this->toolEvolverListGenes($validatedArgs),
+                'evolver_list_capsules' => $this->toolEvolverListCapsules($validatedArgs),
+                'evolver_list_events' => $this->toolEvolverListEvents($validatedArgs),
+                'evolver_upsert_gene' => $this->toolEvolverUpsertGene($validatedArgs),
+                'evolver_delete_gene' => $this->toolEvolverDeleteGene($validatedArgs),
                 'evolver_stats' => $this->toolEvolverStats(),
                 'evolver_safety_status' => $this->toolEvolverSafetyStatus(),
                 'evolver_cleanup' => $this->toolEvolverCleanup(),

@@ -562,7 +562,7 @@ final class SolidifyEngine
         $mutation = $input['mutation'] ?? null;
         $personalityState = $input['personalityState'] ?? null;
         $blastRadius = $input['blastRadius'] ?? ['files' => 0, 'lines' => 0];
-        $dry运行= (bool)($input['dryRun'] ?? false);
+        $dryRun = (bool)($input['dryRun'] ?? false);
         $context = $input['context'] ?? '';
         $mutationsTried = (int)($input['mutationsTried'] ?? 1);
         $totalCycles = (int)($input['totalCycles'] ?? 1);

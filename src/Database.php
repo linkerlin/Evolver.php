@@ -317,12 +317,76 @@ final class Database
     }
 
     /**
+     * Validate SQL identifier (table/column/index name) for safety.
+     * Only allows alphanumeric characters and underscores.
+     */
+    private function validateSqlIdentifier(string $identifier): string
+    {
+        if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $identifier)) {
+            throw new \InvalidArgumentException("Invalid SQL identifier: {$identifier}");
+        }
+        return $identifier;
+    }
+
+    /**
+     * Validate SQL column type for safety.
+     * Only allows specific safe SQLite types with optional constraints.
+     */
+    private function validateSqlType(string $type): string
+    {
+        $allowedTypes = [
+            'INTEGER', 'INT',
+            'TEXT',
+            'REAL',
+            'BLOB',
+            'NUMERIC',
+            'BOOLEAN',
+            'DATETIME',
+            'DATE',
+            'TIME',
+            'VARCHAR',
+            'CHAR',
+            'DECIMAL',
+            'FLOAT',
+            'DOUBLE',
+        ];
+        
+        // Extract base type (handle: TEXT, TEXT DEFAULT 'x', VARCHAR(255), etc.)
+        $trimmedType = trim($type);
+        $upperType = strtoupper($trimmedType);
+        
+        // Match the base type at the start
+        if (!preg_match('/^([a-zA-Z]+)/', $upperType, $matches)) {
+            throw new \InvalidArgumentException("Invalid SQL type format: {$type}");
+        }
+        
+        $baseType = $matches[1];
+        
+        if (!in_array($baseType, $allowedTypes, true)) {
+            throw new \InvalidArgumentException("Invalid SQL type: {$type}");
+        }
+        
+        // Validate the full type definition allows only safe characters
+        // Allows: alphanumeric, spaces, parentheses, commas, underscores, quotes for defaults
+        if (!preg_match('/^[a-zA-Z0-9_\s\(\),\'"\.]+$/', $trimmedType)) {
+            throw new \InvalidArgumentException("Invalid SQL type format: {$type}");
+        }
+        
+        return $trimmedType;
+    }
+
+    /**
      * 添加a column to a table if it doesn't exist.
      */
     private function addColumnIfNotExists(string $table, string $column, string $type): void
     {
         try {
-            $result = $this->db->query("PRAGMA table_info({$table})");
+            // Validate inputs to prevent SQL injection
+            $safeTable = $this->validateSqlIdentifier($table);
+            $safeColumn = $this->validateSqlIdentifier($column);
+            $safeType = $this->validateSqlType($type);
+            
+            $result = $this->db->query("PRAGMA table_info({$safeTable})");
             $exists = false;
             while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
                 if ($row['name'] === $column) {
@@ -332,9 +396,12 @@ final class Database
             }
             
             if (!$exists) {
-                $this->db->exec("ALTER TABLE {$table} ADD COLUMN {$column} {$type}");
-                $this->migrationLog[] = "Added column: {$table}.{$column}";
+                $this->db->exec("ALTER TABLE {$safeTable} ADD COLUMN {$safeColumn} {$safeType}");
+                $this->migrationLog[] = "Added column: {$safeTable}.{$safeColumn}";
             }
+        } catch (\InvalidArgumentException $e) {
+            $this->migrationLog[] = "Error: Invalid identifier in migration: " . $e->getMessage();
+            throw $e;
         } catch (\Exception $e) {
             $this->migrationLog[] = "Warning: Could not add column {$table}.{$column}: " . $e->getMessage();
         }
@@ -358,7 +425,16 @@ final class Database
 
         foreach ($indexes as [$table, $indexName, $columns]) {
             try {
-                $this->db->exec("CREATE INDEX IF NOT EXISTS {$indexName} ON {$table}({$columns})");
+                // Validate inputs to prevent SQL injection
+                $safeTable = $this->validateSqlIdentifier($table);
+                $safeIndexName = $this->validateSqlIdentifier($indexName);
+                // Columns can be comma-separated, validate each one
+                $columnList = array_map('trim', explode(',', $columns));
+                $safeColumns = implode(', ', array_map([$this, 'validateSqlIdentifier'], $columnList));
+                
+                $this->db->exec("CREATE INDEX IF NOT EXISTS {$safeIndexName} ON {$safeTable}({$safeColumns})");
+            } catch (\InvalidArgumentException $e) {
+                $this->migrationLog[] = "Error: Invalid identifier in index creation: " . $e->getMessage();
             } catch (\Exception $e) {
                 $this->migrationLog[] = "Warning: Could not create index {$indexName}: " . $e->getMessage();
             }

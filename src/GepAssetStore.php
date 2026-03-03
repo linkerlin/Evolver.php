@@ -39,7 +39,7 @@ final class GepAssetStore
         }
 
         if (!$hasSchemaVersion) {
-            $this->db->exec('ALTER TABLE genes ADD COLUMN schema_version TEXT DEFAULT "1.5.0"');
+            $this->db->exec('ALTER TABLE genes ADD COLUMN schema_version TEXT DEFAULT "1.6.0"');
         }
 
         // 检查capsules table
@@ -211,7 +211,7 @@ final class GepAssetStore
         $geneId = $capsule['gene'] ?? null;
         $confidence = (float)($capsule['confidence'] ?? 0.5);
         $outcomeStatus = $capsule['outcome']['status'] ?? 'success';
-        $outcome评分= (float)($capsule['outcome']['score'] ?? 0.5);
+        $outcomeScore = (float)($capsule['outcome']['score'] ?? 0.5);
         $successStreak = (int)($capsule['success_streak'] ?? 0);
         $content = $capsule['content'] ?? null;
         $envFingerprint = isset($capsule['env_fingerprint']) 
@@ -369,7 +369,7 @@ final class GepAssetStore
         $signals = json_encode($event['signals'] ?? [], JSON_UNESCAPED_UNICODE);
         $genesUsed = json_encode($event['genes_used'] ?? [], JSON_UNESCAPED_UNICODE);
         $outcomeStatus = $event['outcome']['status'] ?? 'success';
-        $outcome评分= (float)($event['outcome']['score'] ?? 0.5);
+        $outcomeScore = (float)($event['outcome']['score'] ?? 0.5);
         $mutationsTried = (int)($event['mutations_tried'] ?? 1);
         $totalCycles = (int)($event['total_cycles'] ?? 1);
         $envFingerprint = isset($event['env_fingerprint']) 

@@ -84,10 +84,10 @@ Evolver.php/
 
 ## 重要注意事项
 
-### Schema 版本不一致
-- `ContentHash::SCHEMA_VERSION = '1.6.0'`
-- `PromptBuilder::SCHEMA_VERSION = '1.5.0'`
-- 修改 schema 相关代码时需注意潜在的版本不匹配问题。
+### Schema 版本
+- 所有类统一使用 `ContentHash::SCHEMA_VERSION`（当前为 `'1.6.0'`）
+- Schema 迁移由 `Database::runMigrations()` 统一管理
+- `GepAssetStore` 不执行迁移，仅负责数据操作。
 
 ### 安全限制（硬编码）
 - 爆炸半径硬限制：**60 个文件**，**20,000 行**每次演化

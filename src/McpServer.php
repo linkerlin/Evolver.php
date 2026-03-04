@@ -17,7 +17,7 @@ final class McpServer
 {
     private const MCP_VERSION = '2024-11-05';
     private const SERVER_NAME = 'evolver-php';
-    private const SERVER_VERSION = '1.1.0'; // Updated for GEP 1.6.0
+    private const SERVER_VERSION = '2.0.0'; // Major release: feature complete, surpassing original evolver
 
     private GepAssetStore $store;
     private SignalExtractor $signalExtractor;

@@ -63,12 +63,20 @@ final class SolidifyEngine
         'package.json',
     ];
 
+    /** Cached BlastRadiusCalculator instance */
+    private ?BlastRadiusCalculator $blastCalculator = null;
+
     public function __construct(
         private readonly GepAssetStore $store,
         private readonly SignalExtractor $signalExtractor,
         private readonly GeneSelector $selector,
         private readonly ?string $repoRoot = null,
-    ) {}
+    ) {
+        // Initialize blast radius calculator if repo root is available
+        if ($repoRoot !== null && is_dir($repoRoot . '/.git')) {
+            $this->blastCalculator = new BlastRadiusCalculator($repoRoot);
+        }
+    }
 
     /**
      * Check if a path is a critical protected path.
@@ -183,6 +191,64 @@ final class SolidifyEngine
             $result[] = ['dir' => $dir, 'files' => $files];
         }
         return $result;
+    }
+
+    /**
+     * Compute detailed blast radius using BlastRadiusCalculator.
+     * 
+     * This method provides comprehensive blast radius analysis including:
+     * - Accurate line counts via git numstat
+     * - Constraint policy-based filtering
+     * - Directory distribution analysis
+     * - Staged/unstaged/untracked breakdown
+     * 
+     * @param array<string> $baselineUntracked Files untracked at baseline
+     * @return array{
+     *   files: int,
+     *   lines: int,
+     *   linesAdded: int,
+     *   linesDeleted: int,
+     *   changedFiles: array<string>,
+     *   ignoredFiles: array<string>,
+     *   allChangedFiles: array<string>,
+     *   directoryBreakdown: array<array{dir: string, files: int}>,
+     *   topDirectories: array<array{dir: string, files: int}>,
+     *   unstagedChurn: int,
+     *   stagedChurn: int,
+     *   untrackedLines: int,
+     *   calculatorAvailable: bool,
+     * }|null
+     */
+    public function computeDetailedBlastRadius(array $baselineUntracked = []): ?array
+    {
+        if ($this->blastCalculator === null) {
+            return null;
+        }
+
+        try {
+            $result = $this->blastCalculator->compute($baselineUntracked);
+            $result['calculatorAvailable'] = true;
+            return $result;
+        } catch (\Throwable $e) {
+            error_log('[SolidifyEngine] Blast radius calculation failed: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get the BlastRadiusCalculator instance.
+     */
+    public function getBlastCalculator(): ?BlastRadiusCalculator
+    {
+        return $this->blastCalculator;
+    }
+
+    /**
+     * Set a custom BlastRadiusCalculator.
+     */
+    public function setBlastCalculator(BlastRadiusCalculator $calculator): void
+    {
+        $this->blastCalculator = $calculator;
     }
 
     /**

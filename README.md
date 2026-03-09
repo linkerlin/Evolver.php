@@ -2,7 +2,6 @@
 
 🧬 Capability Evolver 的 PHP 实现版本，支持 MCP 服务，部署简单，数据私有化。
 
-A pure PHP 8.3+ 1:1 port of [EvoMap/evolver](https://github.com/EvoMap/evolver) as a stdio MCP server with local SQLite storage (WAL + mmap).
 
 ---
 

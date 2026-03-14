@@ -36,10 +36,9 @@ final class MemoryRetrieverTest extends TestCase
     {
         $config = $this->retriever->getConfig();
 
-        $this->assertSame('hybrid', $config['mode']);
-        $this->assertSame(0.7, $config['vectorWeight']);
-        $this->assertSame(0.3, $config['bm25Weight']);
-        $this->assertSame(0.3, $config['minScore']);
+        $this->assertSame('fts', $config['mode']);
+        $this->assertSame(0.0, $config['minScore']);
+        $this->assertSame(20, $config['candidatePoolSize']);
     }
 
     public function testUpdateConfiguration(): void
@@ -69,6 +68,6 @@ final class MemoryRetrieverTest extends TestCase
         $result = $this->retriever->test('test query');
 
         $this->assertTrue($result['success']);
-        $this->assertSame('hybrid', $result['mode']);
+        $this->assertSame('fts', $result['mode']);
     }
 }

@@ -847,12 +847,12 @@ final class McpServer
 
     /**
      * Get or create VectorStore instance (lazy initialization).
+     * Now uses FTS5 instead of embeddings.
      */
     private function getVectorStore(): VectorStore
     {
         if ($this->vectorStore === null) {
-            $embedder = new OpenAIEmbedder();
-            $this->vectorStore = new VectorStore($this->db, $embedder);
+            $this->vectorStore = new VectorStore($this->db);
         }
         return $this->vectorStore;
     }
@@ -969,7 +969,7 @@ final class McpServer
         if (!$success) {
             return [
                 'ok' => false,
-                'error' => 'Failed to store memory (embedder may not be available)',
+                'error' => 'Failed to store memory',
             ];
         }
 

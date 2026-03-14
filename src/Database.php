@@ -15,7 +15,7 @@ final class Database
     private array $migrationLog = [];
 
     /** Current schema version */
-    private const SCHEMA_VERSION = '1.8.0';
+    private const SCHEMA_VERSION = '1.9.0';
 
     public function __construct(string $path)
     {
@@ -179,6 +179,9 @@ final class Database
         }
         if (version_compare($currentVersion, '1.8.0', '<')) {
             $this->migrateTo180();
+        }
+        if (version_compare($currentVersion, '1.9.0', '<')) {
+            $this->migrateTo190();
         }
 
         // 更新schema version
@@ -377,6 +380,97 @@ final class Database
         $this->addIndexIfNotExists('capsules', 'idx_capsules_access', 'access_count DESC');
         $this->addIndexIfNotExists('events', 'idx_events_tier', 'tier');
         $this->addIndexIfNotExists('vector_index', 'idx_vector_type', 'type');
+    }
+
+    /**
+     * Migration to 1.9.0: FTS5 全文搜索表，替代向量搜索。
+     */
+    private function migrateTo190(): void
+    {
+        $this->migrationLog[] = "Running migration to 1.9.0";
+
+        // 创建 FTS5 虚拟表用于全文搜索
+        // tokenize="unicode61" 支持中文，但需要配合单字分词
+        $this->db->exec(<<<'SQL'
+            CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+                id,
+                type,
+                text,
+                text_tokens,  -- 分词后的文本（中文单字分词）
+                metadata,
+                tokenize='unicode61'
+            )
+        SQL);
+
+        // 迁移已有数据到 FTS5 表
+        $this->migrateVectorIndexToFts();
+    }
+
+    /**
+     * 迁移 vector_index 数据到 memory_fts。
+     */
+    private function migrateVectorIndexToFts(): void
+    {
+        try {
+            // 检查是否有数据需要迁移
+            $row = $this->fetchOne('SELECT COUNT(*) as count FROM vector_index');
+            if ($row && $row['count'] > 0) {
+                // 检查 FTS 表是否已有数据
+                $ftsRow = $this->fetchOne('SELECT COUNT(*) as count FROM memory_fts');
+                if ($ftsRow && $ftsRow['count'] === 0) {
+                    $this->migrationLog[] = 'Migrating vector_index to memory_fts';
+
+                    // 批量迁移
+                    $rows = $this->fetchAll('SELECT id, type, text, metadata FROM vector_index');
+                    foreach ($rows as $row) {
+                        $textTokens = self::tokenizeChinese($row['text']);
+                        $this->exec(
+                            'INSERT INTO memory_fts (id, type, text, text_tokens, metadata) VALUES (:id, :type, :text, :text_tokens, :metadata)',
+                            [
+                                ':id' => $row['id'],
+                                ':type' => $row['type'],
+                                ':text' => $row['text'],
+                                ':text_tokens' => $textTokens,
+                                ':metadata' => $row['metadata'] ?? '{}',
+                            ]
+                        );
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            // FTS5 表可能不存在，忽略错误
+            $this->migrationLog[] = 'Note: Could not migrate to memory_fts - ' . $e->getMessage();
+        }
+    }
+
+    /**
+     * 中文单字分词：将中文文本拆分为单字，用空格分隔。
+     * 英文保持原样（按词分）。
+     */
+    public static function tokenizeChinese(string $text): string
+    {
+        $result = '';
+        $len = mb_strlen($text, 'UTF-8');
+
+        for ($i = 0; $i < $len; $i++) {
+            $char = mb_substr($text, $i, 1, 'UTF-8');
+
+            // 检查是否为中文字符 (CJK Unified Ideographs)
+            $codePoint = mb_ord($char, 'UTF-8');
+            if ($codePoint >= 0x4E00 && $codePoint <= 0x9FFF) {
+                // 中文字符，添加空格分隔
+                $result .= ' ' . $char . ' ';
+            } elseif (preg_match('/[\s\p{P}]/u', $char)) {
+                // 空白或标点，转换为空格
+                $result .= ' ';
+            } else {
+                // 英文/数字等，保持原样
+                $result .= $char;
+            }
+        }
+
+        // 合并多余空格
+        return preg_replace('/\s+/', ' ', trim($result));
     }
 
     /**

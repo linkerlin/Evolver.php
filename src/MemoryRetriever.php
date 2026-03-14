@@ -5,22 +5,20 @@ declare(strict_types=1);
 namespace Evolver;
 
 /**
- * Hybrid Retrieval System.
- * Combines vector search + BM25 full-text search with RRF fusion.
+ * FTS5-based Retrieval System.
+ * Full-text search with Chinese tokenization support.
  */
 final class MemoryRetriever
 {
     private const DEFAULT_CONFIG = [
-        'mode' => 'hybrid',
-        'vectorWeight' => 0.7,
-        'bm25Weight' => 0.3,
-        'minScore' => 0.3,
+        'mode' => 'fts',
+        'minScore' => 0.0,
         'candidatePoolSize' => 20,
         'recencyHalfLifeDays' => 14,
         'recencyWeight' => 0.1,
         'filterNoise' => true,
         'lengthNormAnchor' => 500,
-        'hardMinScore' => 0.35,
+        'hardMinScore' => 0.0,
         'timeDecayHalfLifeDays' => 60,
     ];
 
@@ -34,7 +32,7 @@ final class MemoryRetriever
     }
 
     /**
-     * Retrieve memories matching the query.
+     * Retrieve memories matching the query using FTS5.
      *
      * @return RetrievalResult[]
      */
@@ -44,29 +42,41 @@ final class MemoryRetriever
         $scopeFilter = $options['scope'] ?? null;
         $category = $options['category'] ?? null;
 
-        if ($this->config['mode'] === 'vector' || !$this->hasFtsSupport()) {
-            return $this->vectorOnlyRetrieval($query, $safeLimit, $scopeFilter, $category);
-        }
-
-        return $this->hybridRetrieval($query, $safeLimit, $scopeFilter, $category);
+        return $this->ftsRetrieval($query, $safeLimit, $scopeFilter, $category);
     }
 
     /**
-     * Vector-only retrieval (fallback when no FTS support).
+     * FTS5-based retrieval.
      */
-    private function vectorOnlyRetrieval(
+    private function ftsRetrieval(
         string $query,
         int $limit,
         ?string $scope,
         ?string $category
     ): array {
-        $results = $this->vectorStore->search($query, $limit, $this->config['minScore']);
+        $candidatePoolSize = max($this->config['candidatePoolSize'], $limit * 2);
 
-        // Convert to RetrievalResult objects
+        // 使用 FTS5 全文搜索
+        $queryTokens = Database::tokenizeChinese($query);
+        $escapedQuery = $this->escapeFtsQuery($queryTokens);
+
+        $sql = <<<'SQL'
+            SELECT id, bm25(memory_fts) as score
+            FROM memory_fts
+            WHERE memory_fts MATCH :query
+            ORDER BY score ASC
+            LIMIT :limit
+        SQL;
+
+        $rows = $this->db->fetchAll($sql, [
+            ':query' => $escapedQuery,
+            ':limit' => $candidatePoolSize,
+        ]);
+
         $retrievalResults = [];
-        $rank = 1;
-        foreach ($results as $id => $score) {
-            $entry = $this->getMemoryEntry($id);
+
+        foreach ($rows as $row) {
+            $entry = $this->getMemoryEntry($row['id']);
             if ($entry === null) {
                 continue;
             }
@@ -79,11 +89,15 @@ final class MemoryRetriever
                 continue;
             }
 
+            // bm25 返回负值，转换为 0-1 分数
+            $bm25Score = (float) $row['score'];
+            $normalizedScore = max(0, min(1, 1 + ($bm25Score / 10)));
+
             $retrievalResults[] = new RetrievalResult(
                 entry: $entry,
-                score: $score,
+                score: $normalizedScore,
                 sources: [
-                    'vector' => ['score' => $score, 'rank' => $rank++],
+                    'fts' => ['score' => $normalizedScore, 'bm25' => $bm25Score],
                 ]
             );
         }
@@ -105,203 +119,6 @@ final class MemoryRetriever
         // Re-index and limit
         $retrievalResults = array_values($retrievalResults);
         return array_slice($retrievalResults, 0, $limit);
-    }
-
-    /**
-     * Hybrid retrieval combining vector + BM25.
-     */
-    private function hybridRetrieval(
-        string $query,
-        int $limit,
-        ?string $scope,
-        ?string $category
-    ): array {
-        $candidatePoolSize = max($this->config['candidatePoolSize'], $limit * 2);
-
-        // Run vector and BM25 searches
-        $vectorResults = $this->runVectorSearch($query, $candidatePoolSize, $scope, $category);
-        $bm25Results = $this->runBM25Search($query, $candidatePoolSize, $scope, $category);
-
-        // Fuse results using RRF
-        $fusedResults = $this->fuseResults($vectorResults, $bm25Results);
-
-        // Apply minimum score threshold
-        $fusedResults = array_filter(
-            $fusedResults,
-            fn(RetrievalResult $r) => $r->score >= $this->config['minScore']
-        );
-
-        // Apply boosts
-        $fusedResults = $this->applyRecencyBoost($fusedResults);
-        $fusedResults = $this->applyLengthNormalization($fusedResults);
-
-        // Hard minimum score filter
-        $fusedResults = array_filter(
-            $fusedResults,
-            fn(RetrievalResult $r) => $r->score >= $this->config['hardMinScore']
-        );
-
-        // Apply decay
-        $fusedResults = $this->applyDecayBoost($fusedResults);
-
-        // MMR diversity
-        $fusedResults = $this->applyMMRDiversity($fusedResults);
-
-        // Re-index and limit
-        $fusedResults = array_values($fusedResults);
-        return array_slice($fusedResults, 0, $limit);
-    }
-
-    /**
-     * Run vector search.
-     */
-    private function runVectorSearch(string $query, int $limit, ?string $scope, ?string $category): array
-    {
-        $results = $this->vectorStore->search($query, $limit, 0.1);
-
-        $ranked = [];
-        $rank = 1;
-        foreach ($results as $id => $score) {
-            $entry = $this->getMemoryEntry($id);
-            if ($entry === null) {
-                continue;
-            }
-
-            if ($scope !== null && ($entry['scope'] ?? null) !== $scope) {
-                continue;
-            }
-            if ($category !== null && ($entry['category'] ?? null) !== $category) {
-                continue;
-            }
-
-            $ranked[$id] = [
-                'entry' => $entry,
-                'score' => $score,
-                'rank' => $rank++,
-            ];
-        }
-
-        return $ranked;
-    }
-
-    /**
-     * Run BM25 full-text search using SQLite FTS.
-     */
-    private function runBM25Search(string $query, int $limit, ?string $scope, ?string $category): array
-    {
-        // Query vector_index table which stores text for all memory types
-        $sql = 'SELECT id, type, text, metadata FROM vector_index WHERE 1=1';
-        $params = [];
-
-        // Use LIKE for simple matching (no FTS5 available in all SQLite builds)
-        $sql .= ' AND text LIKE :query';
-        $params[':query'] = '%' . $query . '%';
-
-        if ($category !== null) {
-            $sql .= ' AND type = :category';
-            $params[':category'] = $category;
-        }
-
-        $sql .= ' LIMIT :limit';
-        $params[':limit'] = $limit;
-
-        $rows = $this->db->fetchAll($sql, $params);
-
-        $results = [];
-        $rank = 1;
-        foreach ($rows as $row) {
-            $metadata = json_decode($row['metadata'] ?? '{}', true);
-            
-            // Filter by scope if specified (scope is in metadata)
-            if ($scope !== null && ($metadata['scope'] ?? null) !== $scope) {
-                continue;
-            }
-            
-            // Simple BM25-like scoring based on match density
-            $text = $row['text'] ?? '';
-            $queryLen = strlen($query);
-            $textLen = strlen($text);
-            $matchCount = substr_count(strtolower($text), strtolower($query));
-            $score = $textLen > 0 ? min(1.0, ($matchCount * $queryLen) / $textLen * 2) : 0;
-
-            // Build entry compatible with RetrievalResult
-            $entry = [
-                'id' => $row['id'],
-                'text' => $text,
-                'category' => $row['type'],
-                'scope' => $metadata['scope'] ?? 'global',
-                'metadata' => $row['metadata'],
-                'importance' => $metadata['importance'] ?? 0.7,
-                'timestamp' => $metadata['timestamp'] ?? (time() * 1000),
-            ];
-
-            $results[$row['id']] = [
-                'entry' => $entry,
-                'score' => $score,
-                'rank' => $rank++,
-            ];
-        }
-
-        return $results;
-    }
-
-    /**
-     * Fuse vector and BM25 results using weighted combination.
-     */
-    private function fuseResults(array $vectorResults, array $bm25Results): array
-    {
-        $allIds = array_unique(array_merge(
-            array_keys($vectorResults),
-            array_keys($bm25Results)
-        ));
-
-        $fusedResults = [];
-
-        foreach ($allIds as $id) {
-            $vectorResult = $vectorResults[$id] ?? null;
-            $bm25Result = $bm25Results[$id] ?? null;
-
-            // Use the result with more complete data
-            $baseEntry = $vectorResult['entry'] ?? $bm25Result['entry'] ?? null;
-            if ($baseEntry === null) {
-                continue;
-            }
-
-            $vectorScore = $vectorResult['score'] ?? 0;
-            $bm25Score = $bm25Result['score'] ?? 0;
-
-            // Weighted fusion
-            $fusedScore = ($vectorScore * $this->config['vectorWeight'])
-                        + ($bm25Score * $this->config['bm25Weight']);
-
-            // Preserve high BM25 scores for exact matches
-            if ($bm25Score >= 0.75) {
-                $fusedScore = max($fusedScore, $bm25Score * 0.92);
-            }
-
-            $fusedScore = max(0.1, min(1.0, $fusedScore));
-
-            $fusedResults[] = new RetrievalResult(
-                entry: $baseEntry,
-                score: $fusedScore,
-                sources: [
-                    'vector' => $vectorResult ? [
-                        'score' => $vectorResult['score'],
-                        'rank' => $vectorResult['rank'],
-                    ] : null,
-                    'bm25' => $bm25Result ? [
-                        'score' => $bm25Result['score'],
-                        'rank' => $bm25Result['rank'],
-                    ] : null,
-                    'fused' => ['score' => $fusedScore],
-                ]
-            );
-        }
-
-        // Sort by score descending
-        usort($fusedResults, fn($a, $b) => $b->score <=> $a->score);
-
-        return $fusedResults;
     }
 
     /**
@@ -330,7 +147,7 @@ final class MemoryRetriever
     }
 
     /**
-     * Apply length normalization: penalize long entries.
+     * Apply length normalization: penalize very long entries.
      */
     private function applyLengthNormalization(array $results): array
     {
@@ -341,7 +158,7 @@ final class MemoryRetriever
         }
 
         foreach ($results as $result) {
-            $charLen = strlen($result->entry['text'] ?? '');
+            $charLen = mb_strlen($result->entry['text'] ?? '', 'UTF-8');
             $ratio = $charLen / $anchor;
             $logRatio = log(max($ratio, 1), 2);
             $factor = 1 / (1 + 0.5 * $logRatio);
@@ -385,7 +202,7 @@ final class MemoryRetriever
     }
 
     /**
-     * MMR diversity filter.
+     * MMR diversity filter using text similarity.
      */
     private function applyMMRDiversity(array $results, float $similarityThreshold = 0.85): array
     {
@@ -400,7 +217,7 @@ final class MemoryRetriever
             $tooSimilar = false;
 
             foreach ($selected as $s) {
-                $sim = $this->computeSimilarity($s->entry, $candidate->entry);
+                $sim = $this->computeTextSimilarity($s->entry, $candidate->entry);
                 if ($sim > $similarityThreshold) {
                     $tooSimilar = true;
                     break;
@@ -418,47 +235,27 @@ final class MemoryRetriever
     }
 
     /**
-     * Compute similarity between two entries using their vectors.
+     * Compute text similarity using Jaccard index on tokens.
      */
-    private function computeSimilarity(array $a, array $b): float
+    private function computeTextSimilarity(array $a, array $b): float
     {
-        $vecA = $this->vectorStore->getVector($a['id'] ?? '');
-        $vecB = $this->vectorStore->getVector($b['id'] ?? '');
+        $textA = $a['text'] ?? '';
+        $textB = $b['text'] ?? '';
 
-        if ($vecA === null || $vecB === null) {
+        $tokensA = array_unique(preg_split('/\s+/u', Database::tokenizeChinese($textA)));
+        $tokensB = array_unique(preg_split('/\s+/u', Database::tokenizeChinese($textB)));
+
+        $tokensA = array_filter($tokensA, fn($t) => strlen($t) > 0);
+        $tokensB = array_filter($tokensB, fn($t) => strlen($t) > 0);
+
+        if (empty($tokensA) || empty($tokensB)) {
             return 0.0;
         }
 
-        return $this->cosineSimilarity($vecA, $vecB);
-    }
+        $intersection = array_intersect($tokensA, $tokensB);
+        $union = array_unique(array_merge($tokensA, $tokensB));
 
-    /**
-     * Cosine similarity between two vectors.
-     */
-    private function cosineSimilarity(array $a, array $b): float
-    {
-        $dot = 0.0;
-        $normA = 0.0;
-        $normB = 0.0;
-
-        $count = min(count($a), count($b));
-        for ($i = 0; $i < $count; $i++) {
-            $dot += $a[$i] * $b[$i];
-            $normA += $a[$i] * $a[$i];
-            $normB += $b[$i] * $b[$i];
-        }
-
-        $norm = sqrt($normA) * sqrt($normB);
-        return $norm > 0 ? $dot / $norm : 0.0;
-    }
-
-    /**
-     * Check if FTS support is available.
-     */
-    private function hasFtsSupport(): bool
-    {
-        // For now, use hybrid mode always (LIKE-based fallback)
-        return true;
+        return count($union) > 0 ? count($intersection) / count($union) : 0.0;
     }
 
     /**
@@ -470,13 +267,13 @@ final class MemoryRetriever
             'SELECT id, type, text, metadata FROM vector_index WHERE id = :id',
             [':id' => $id]
         );
-        
+
         if ($row === null) {
             return null;
         }
-        
+
         $metadata = json_decode($row['metadata'] ?? '{}', true);
-        
+
         return [
             'id' => $row['id'],
             'text' => $row['text'],
@@ -486,6 +283,26 @@ final class MemoryRetriever
             'importance' => $metadata['importance'] ?? 0.7,
             'timestamp' => $metadata['timestamp'] ?? (time() * 1000),
         ];
+    }
+
+    /**
+     * Escape FTS5 special characters in query.
+     */
+    private function escapeFtsQuery(string $query): string
+    {
+        // FTS5 特殊字符: * " ' ( ) : ; ^ { } [ ] ~
+        $escaped = str_replace(['"', "'"], '', $query);
+
+        // 分词后用 OR 连接
+        $tokens = preg_split('/\s+/u', trim($escaped));
+        $tokens = array_filter($tokens, fn($t) => strlen($t) > 0);
+
+        if (empty($tokens)) {
+            return '""';
+        }
+
+        // 使用 OR 连接多个词，增加召回率
+        return implode(' OR ', array_map(fn($t) => '"' . $t . '"', $tokens));
     }
 
     /**

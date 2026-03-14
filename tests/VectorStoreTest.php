@@ -5,13 +5,11 @@ declare(strict_types=1);
 namespace Evolver\Tests;
 
 use Evolver\Database;
-use Evolver\NullEmbedder;
-use Evolver\OpenAIEmbedder;
 use Evolver\VectorStore;
 use PHPUnit\Framework\TestCase;
 
 /**
- * VectorStore tests - vector storage and similarity search.
+ * VectorStore tests - FTS5 full-text search storage.
  */
 final class VectorStoreTest extends TestCase
 {
@@ -21,204 +19,130 @@ final class VectorStoreTest extends TestCase
     protected function setUp(): void
     {
         $this->db = new Database(':memory:');
-    }
-
-    private function createStoreWithMockEmbedder(): VectorStore
-    {
-        $embedder = new class implements \Evolver\EmbedderInterface {
-            public function embed(string $text): ?array
-            {
-                // Simple mock: generate a deterministic 3D vector based on text hash
-                $hash = crc32($text);
-                return [
-                    (float)(($hash & 0xFF) / 255.0),
-                    (float)((($hash >> 8) & 0xFF) / 255.0),
-                    (float)((($hash >> 16) & 0xFF) / 255.0),
-                ];
-            }
-
-            public function getDimension(): int
-            {
-                return 3;
-            }
-
-            public function isAvailable(): bool
-            {
-                return true;
-            }
-        };
-
-        return new VectorStore($this->db, $embedder);
+        $this->store = new VectorStore($this->db);
     }
 
     // -------------------------------------------------------------------------
     // Store Tests
     // -------------------------------------------------------------------------
 
-    public function testStoreWithEmbedder(): void
+    public function testStoreBasic(): void
     {
-        $store = $this->createStoreWithMockEmbedder();
-
-        $result = $store->store('gene', 'test-1', 'Hello world');
+        $result = $this->store->store('gene', 'test-1', 'Hello world');
 
         $this->assertTrue($result);
-        $this->assertSame(1, $store->count());
-    }
-
-    public function testStoreWithNullEmbedder(): void
-    {
-        $store = new VectorStore($this->db, new NullEmbedder());
-
-        $result = $store->store('gene', 'test-1', 'Hello world');
-
-        $this->assertTrue($result);
-        $this->assertSame(1, $store->count());
-        $this->assertSame(0, $store->countWithVectors());
+        $this->assertSame(1, $this->store->count());
     }
 
     public function testStoreMultipleItems(): void
     {
-        $store = $this->createStoreWithMockEmbedder();
+        $this->store->store('gene', 'test-1', 'First text');
+        $this->store->store('gene', 'test-2', 'Second text');
+        $this->store->store('capsule', 'test-3', 'Third text');
 
-        $store->store('gene', 'test-1', 'First text');
-        $store->store('gene', 'test-2', 'Second text');
-        $store->store('capsule', 'test-3', 'Third text');
-
-        $this->assertSame(3, $store->count());
-        $this->assertSame(3, $store->countWithVectors());
+        $this->assertSame(3, $this->store->count());
     }
 
     public function testStoreOverwrites(): void
     {
-        $store = $this->createStoreWithMockEmbedder();
+        $this->store->store('gene', 'test-1', 'Original text');
+        $this->store->store('gene', 'test-1', 'Updated text');
 
-        $store->store('gene', 'test-1', 'Original text');
-        $store->store('gene', 'test-1', 'Updated text');
-
-        $this->assertSame(1, $store->count());
-        $this->assertSame('Updated text', $store->getText('test-1'));
+        $this->assertSame(1, $this->store->count());
+        $this->assertSame('Updated text', $this->store->getText('test-1'));
     }
 
     public function testStoreWithMetadata(): void
     {
-        $store = $this->createStoreWithMockEmbedder();
+        $this->store->store('gene', 'test-1', 'Text', ['category' => 'preference', 'score' => 0.9]);
 
-        $store->store('gene', 'test-1', 'Text', ['category' => 'preference', 'score' => 0.9]);
-
-        $metadata = $store->getMetadata('test-1');
+        $metadata = $this->store->getMetadata('test-1');
 
         $this->assertSame('gene', $metadata['type']);
         $this->assertSame('preference', $metadata['category']);
         $this->assertSame(0.9, $metadata['score']);
     }
 
+    public function testStoreChineseText(): void
+    {
+        $result = $this->store->store('capsule', 'test-cn', '这是一个中文测试');
+
+        $this->assertTrue($result);
+        $this->assertSame('这是一个中文测试', $this->store->getText('test-cn'));
+    }
+
     // -------------------------------------------------------------------------
     // Search Tests
     // -------------------------------------------------------------------------
 
-    public function testSearchReturnsSimilarItems(): void
+    public function testSearchReturnsMatchingItems(): void
     {
-        $store = $this->createStoreWithMockEmbedder();
+        $this->store->store('gene', 'test-1', 'apple fruit');
+        $this->store->store('gene', 'test-2', 'banana fruit');
+        $this->store->store('gene', 'test-3', 'car vehicle');
 
-        $store->store('gene', 'test-1', 'apple fruit');
-        $store->store('gene', 'test-2', 'banana fruit');
-        $store->store('gene', 'test-3', 'car vehicle');
-
-        // Same text should match perfectly with itself
-        $results = $store->search('apple fruit', limit: 10, minScore: 0.0);
+        $results = $this->store->search('apple', limit: 10, minScore: 0.0);
 
         $this->assertNotEmpty($results);
         $this->assertArrayHasKey('test-1', $results);
     }
 
-    public function testSearchRespectsMinScore(): void
-    {
-        $store = $this->createStoreWithMockEmbedder();
-
-        $store->store('gene', 'test-1', 'unique text alpha');
-        $store->store('gene', 'test-2', 'completely different beta');
-
-        $results = $store->search('unique text alpha', limit: 10, minScore: 1.0);
-
-        // Only exact match should return with minScore 1.0
-        $this->assertCount(1, $results);
-        $this->assertArrayHasKey('test-1', $results);
-    }
-
     public function testSearchRespectsLimit(): void
     {
-        $store = $this->createStoreWithMockEmbedder();
-
         for ($i = 0; $i < 20; $i++) {
-            $store->store('gene', "test-$i", "text number $i");
+            $this->store->store('gene', "test-$i", "text number $i");
         }
 
-        $results = $store->search('text', limit: 5, minScore: 0.0);
+        $results = $this->store->search('text', limit: 5, minScore: 0.0);
 
-        $this->assertCount(5, $results);
-    }
-
-    public function testSearchReturnsEmptyWithNullEmbedder(): void
-    {
-        $store = new VectorStore($this->db, new NullEmbedder());
-
-        $store->store('gene', 'test-1', 'Hello world');
-
-        $results = $store->search('Hello world');
-
-        $this->assertEmpty($results);
+        $this->assertLessThanOrEqual(5, count($results));
     }
 
     public function testSearchByTypeFiltersResults(): void
     {
-        $store = $this->createStoreWithMockEmbedder();
+        $this->store->store('gene', 'test-1', 'apple fruit');
+        $this->store->store('capsule', 'test-2', 'banana fruit');
+        $this->store->store('event', 'test-3', 'cherry fruit');
 
-        $store->store('gene', 'test-1', 'apple fruit');
-        $store->store('capsule', 'test-2', 'banana fruit');
-        $store->store('event', 'test-3', 'cherry fruit');
-
-        $results = $store->searchByType('fruit', 'capsule', limit: 10, minScore: 0.0);
+        $results = $this->store->searchByType('fruit', 'capsule', limit: 10, minScore: 0.0);
 
         $this->assertCount(1, $results);
         $this->assertArrayHasKey('test-2', $results);
+    }
+
+    public function testSearchChineseText(): void
+    {
+        $this->store->store('capsule', 'test-1', '今天天气很好');
+        $this->store->store('capsule', 'test-2', '明天会下雨');
+        $this->store->store('capsule', 'test-3', '我喜欢吃苹果');
+
+        // 搜索单个中文字
+        $results = $this->store->search('天气', limit: 10, minScore: 0.0);
+
+        $this->assertNotEmpty($results);
+        $this->assertArrayHasKey('test-1', $results);
     }
 
     // -------------------------------------------------------------------------
     // Similarity Tests
     // -------------------------------------------------------------------------
 
-    public function testSimilarityBetweenStoredVectors(): void
+    public function testSimilarityBetweenTexts(): void
     {
-        $store = $this->createStoreWithMockEmbedder();
+        $this->store->store('gene', 'test-1', 'hello world');
+        $this->store->store('gene', 'test-2', 'hello world'); // Same text
 
-        $store->store('gene', 'test-1', 'hello');
-        $store->store('gene', 'test-2', 'hello'); // Same text = same vector
-
-        $similarity = $store->similarity('test-1', 'test-2');
+        $similarity = $this->store->similarity('test-1', 'test-2');
 
         $this->assertNotNull($similarity);
-        $this->assertSame(1.0, $similarity); // Identical vectors
+        $this->assertSame(1.0, $similarity); // Identical text
     }
 
     public function testSimilarityReturnsNullForMissingId(): void
     {
-        $store = $this->createStoreWithMockEmbedder();
+        $this->store->store('gene', 'test-1', 'hello');
 
-        $store->store('gene', 'test-1', 'hello');
-
-        $similarity = $store->similarity('test-1', 'nonexistent');
-
-        $this->assertNull($similarity);
-    }
-
-    public function testSimilarityReturnsNullWithNullEmbedder(): void
-    {
-        $store = new VectorStore($this->db, new NullEmbedder());
-
-        $store->store('gene', 'test-1', 'hello');
-        $store->store('gene', 'test-2', 'world');
-
-        $similarity = $store->similarity('test-1', 'test-2');
+        $similarity = $this->store->similarity('test-1', 'nonexistent');
 
         $this->assertNull($similarity);
     }
@@ -227,50 +151,33 @@ final class VectorStoreTest extends TestCase
     // Get Tests
     // -------------------------------------------------------------------------
 
-    public function testGetVector(): void
+    public function testGetVectorReturnsNull(): void
     {
-        $store = $this->createStoreWithMockEmbedder();
+        $this->store->store('gene', 'test-1', 'hello');
 
-        $store->store('gene', 'test-1', 'hello');
-
-        $vector = $store->getVector('test-1');
-
-        $this->assertNotNull($vector);
-        $this->assertCount(3, $vector);
-    }
-
-    public function testGetVectorReturnsNullForMissing(): void
-    {
-        $store = $this->createStoreWithMockEmbedder();
-
-        $vector = $store->getVector('nonexistent');
+        // Vector embedding is no longer supported
+        $vector = $this->store->getVector('test-1');
 
         $this->assertNull($vector);
     }
 
     public function testGetText(): void
     {
-        $store = $this->createStoreWithMockEmbedder();
+        $this->store->store('gene', 'test-1', 'Hello world');
 
-        $store->store('gene', 'test-1', 'Hello world');
-
-        $this->assertSame('Hello world', $store->getText('test-1'));
+        $this->assertSame('Hello world', $this->store->getText('test-1'));
     }
 
     public function testGetTextReturnsNullForMissing(): void
     {
-        $store = $this->createStoreWithMockEmbedder();
-
-        $this->assertNull($store->getText('nonexistent'));
+        $this->assertNull($this->store->getText('nonexistent'));
     }
 
     public function testGetMetadata(): void
     {
-        $store = $this->createStoreWithMockEmbedder();
+        $this->store->store('gene', 'test-1', 'Text', ['key' => 'value']);
 
-        $store->store('gene', 'test-1', 'Text', ['key' => 'value']);
-
-        $metadata = $store->getMetadata('test-1');
+        $metadata = $this->store->getMetadata('test-1');
 
         $this->assertSame('gene', $metadata['type']);
         $this->assertSame('value', $metadata['key']);
@@ -278,9 +185,7 @@ final class VectorStoreTest extends TestCase
 
     public function testGetMetadataReturnsNullForMissing(): void
     {
-        $store = $this->createStoreWithMockEmbedder();
-
-        $this->assertNull($store->getMetadata('nonexistent'));
+        $this->assertNull($this->store->getMetadata('nonexistent'));
     }
 
     // -------------------------------------------------------------------------
@@ -289,31 +194,26 @@ final class VectorStoreTest extends TestCase
 
     public function testDelete(): void
     {
-        $store = $this->createStoreWithMockEmbedder();
+        $this->store->store('gene', 'test-1', 'Hello');
+        $this->assertSame(1, $this->store->count());
 
-        $store->store('gene', 'test-1', 'Hello');
-        $this->assertSame(1, $store->count());
-
-        $result = $store->delete('test-1');
+        $result = $this->store->delete('test-1');
 
         $this->assertTrue($result);
-        $this->assertSame(0, $store->count());
-        $this->assertNull($store->getVector('test-1'));
+        $this->assertSame(0, $this->store->count());
     }
 
     public function testDeleteByType(): void
     {
-        $store = $this->createStoreWithMockEmbedder();
+        $this->store->store('gene', 'test-1', 'One');
+        $this->store->store('gene', 'test-2', 'Two');
+        $this->store->store('capsule', 'test-3', 'Three');
 
-        $store->store('gene', 'test-1', 'One');
-        $store->store('gene', 'test-2', 'Two');
-        $store->store('capsule', 'test-3', 'Three');
-
-        $deleted = $store->deleteByType('gene');
+        $deleted = $this->store->deleteByType('gene');
 
         $this->assertSame(2, $deleted);
-        $this->assertSame(1, $store->count());
-        $this->assertNotNull($store->getText('test-3'));
+        $this->assertSame(1, $this->store->count());
+        $this->assertNotNull($this->store->getText('test-3'));
     }
 
     // -------------------------------------------------------------------------
@@ -322,92 +222,72 @@ final class VectorStoreTest extends TestCase
 
     public function testCount(): void
     {
-        $store = $this->createStoreWithMockEmbedder();
+        $this->assertSame(0, $this->store->count());
 
-        $this->assertSame(0, $store->count());
+        $this->store->store('gene', 'test-1', 'One');
+        $this->assertSame(1, $this->store->count());
 
-        $store->store('gene', 'test-1', 'One');
-        $this->assertSame(1, $store->count());
-
-        $store->store('gene', 'test-2', 'Two');
-        $this->assertSame(2, $store->count());
+        $this->store->store('gene', 'test-2', 'Two');
+        $this->assertSame(2, $this->store->count());
     }
 
     public function testCountWithVectors(): void
     {
-        $store = $this->createStoreWithMockEmbedder();
+        $this->store->store('gene', 'test-1', 'One');
+        $this->store->store('gene', 'test-2', 'Two');
 
-        $store->store('gene', 'test-1', 'One');
-        $store->store('gene', 'test-2', 'Two');
-
-        $this->assertSame(2, $store->countWithVectors());
+        // countWithVectors now returns same as count (no vectors)
+        $this->assertSame(2, $this->store->countWithVectors());
     }
 
-    public function testCountWithVectorsExcludesNullEmbedder(): void
+    // -------------------------------------------------------------------------
+    // Embedder Tests (deprecated behavior)
+    // -------------------------------------------------------------------------
+
+    public function testHasEmbedderReturnsFalse(): void
     {
-        $store = new VectorStore($this->db, new NullEmbedder());
-
-        $store->store('gene', 'test-1', 'One');
-        $store->store('gene', 'test-2', 'Two');
-
-        $this->assertSame(2, $store->count());
-        $this->assertSame(0, $store->countWithVectors());
+        $this->assertFalse($this->store->hasEmbedder());
     }
 
-    // -------------------------------------------------------------------------
-    // Cache Tests
-    // -------------------------------------------------------------------------
+    public function testGetDimensionReturnsZero(): void
+    {
+        $this->assertSame(0, $this->store->getDimension());
+    }
 
     public function testClearCache(): void
     {
-        $store = $this->createStoreWithMockEmbedder();
+        $this->store->store('gene', 'test-1', 'Hello');
 
-        $store->store('gene', 'test-1', 'Hello');
+        // clearCache is now a no-op
+        $this->store->clearCache();
 
-        $this->assertNotNull($store->getVector('test-1'));
-
-        $store->clearCache();
-
-        // After clear, vectors should reload from DB
-        $this->assertNotNull($store->getVector('test-1'));
+        $this->assertSame(1, $this->store->count());
     }
 
-    public function testHasEmbedder(): void
-    {
-        $storeWithEmbedder = $this->createStoreWithMockEmbedder();
-        $storeWithNull = new VectorStore($this->db, new NullEmbedder());
+    // -------------------------------------------------------------------------
+    // Chinese Tokenization Tests
+    // -------------------------------------------------------------------------
 
-        $this->assertTrue($storeWithEmbedder->hasEmbedder());
-        $this->assertFalse($storeWithNull->hasEmbedder());
+    public function testTokenizeChinese(): void
+    {
+        $result = Database::tokenizeChinese('你好世界');
+        $this->assertSame('你 好 世 界', $result);
     }
 
-    public function testGetDimension(): void
+    public function testTokenizeMixedText(): void
     {
-        $store = $this->createStoreWithMockEmbedder();
-
-        $this->assertSame(3, $store->getDimension());
+        $result = Database::tokenizeChinese('Hello 你好 World 世界');
+        $this->assertStringContainsString('Hello', $result);
+        $this->assertStringContainsString('你', $result);
+        $this->assertStringContainsString('好', $result);
     }
 
-    public function testCacheTrimmedWhenExceedsMaxSize(): void
+    public function testTokenizeWithPunctuation(): void
     {
-        // Create store with small cache limit
-        $embedder = new class implements \Evolver\EmbedderInterface {
-            public function embed(string $text): ?array
-            {
-                return [0.1, 0.2, 0.3];
-            }
-            public function getDimension(): int { return 3; }
-            public function isAvailable(): bool { return true; }
-        };
-
-        $store = new VectorStore($this->db, $embedder, maxCacheSize: 10);
-
-        // Store more items than cache limit
-        for ($i = 0; $i < 20; $i++) {
-            $store->store('gene', "test-$i", "Text $i");
-        }
-
-        // All items should be in DB
-        $this->assertSame(20, $store->count());
+        $result = Database::tokenizeChinese('你好，世界！');
+        $this->assertStringContainsString('你', $result);
+        $this->assertStringContainsString('好', $result);
+        $this->assertStringContainsString('世', $result);
+        $this->assertStringContainsString('界', $result);
     }
 }

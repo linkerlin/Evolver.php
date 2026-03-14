@@ -21,6 +21,18 @@ final class TaskReceiver
     private const REQUEST_TIMEOUT = 8;
     private const CLAIM_TIMEOUT = 5;
 
+    // Commitment deadline estimation constants
+    private const MIN_COMMITMENT_MS = 300000;        // 5 min (Hub minimum)
+    private const MAX_COMMITMENT_MS = 86400000;      // 24 h (Hub maximum)
+
+    /** @var array<int, array{threshold: float, durationMs: int}> */
+    private const DIFFICULTY_DURATION_MAP = [
+        ['threshold' => 0.3, 'durationMs' => 900000],   // low:       15 min
+        ['threshold' => 0.5, 'durationMs' => 1800000],  // medium:    30 min
+        ['threshold' => 0.7, 'durationMs' => 3600000],  // high:      60 min
+        ['threshold' => 1.0, 'durationMs' => 7200000],  // very high: 120 min
+    ];
+
     /** Scoring weights by strategy */
     private const STRATEGY_WEIGHTS = [
         'greedy'       => ['roi' => 0.10, 'capability' => 0.05, 'completion' => 0.05, 'bounty' => 0.80],
@@ -430,6 +442,160 @@ final class TaskReceiver
         }
 
         return array_values(array_unique($signals));
+    }
+
+    // -------------------------------------------------------------------------
+    // Commitment deadline estimation
+    // -------------------------------------------------------------------------
+
+    /**
+     * Estimate a reasonable commitment deadline for a task.
+     * Returns an ISO-8601 date string or null if estimation fails.
+     *
+     * @param array $task Task from Hub
+     */
+    public function estimateCommitmentDeadline(array $task): ?string
+    {
+        $difficulty = isset($task['complexity_score']) && is_numeric($task['complexity_score'])
+            ? (float)$task['complexity_score']
+            : $this->localDifficultyEstimate($task);
+
+        // Find appropriate duration based on difficulty
+        $durationMs = self::DIFFICULTY_DURATION_MAP[count(self::DIFFICULTY_DURATION_MAP) - 1]['durationMs'];
+        foreach (self::DIFFICULTY_DURATION_MAP as $mapping) {
+            if ($difficulty <= $mapping['threshold']) {
+                $durationMs = $mapping['durationMs'];
+                break;
+            }
+        }
+
+        // Clamp to min/max bounds
+        $durationMs = max(self::MIN_COMMITMENT_MS, min(self::MAX_COMMITMENT_MS, $durationMs));
+
+        $deadline = new \DateTimeImmutable('@' . (time() + (int)($durationMs / 1000)));
+
+        // Respect task expiration time
+        if (!empty($task['expires_at'])) {
+            try {
+                $expiresAt = new \DateTimeImmutable($task['expires_at']);
+                if ($expiresAt < $deadline) {
+                    $remaining = $expiresAt->getTimestamp() - time();
+                    if ($remaining * 1000 < self::MIN_COMMITMENT_MS) {
+                        return null;
+                    }
+                    // Set deadline 1 minute before expiration
+                    $adjusted = $expiresAt->modify('-1 minute');
+                    if ($adjusted->getTimestamp() - time() < self::MIN_COMMITMENT_MS / 1000) {
+                        return null;
+                    }
+                    $deadline = $adjusted;
+                }
+            } catch (\Throwable) {
+                // Invalid date format, use calculated deadline
+            }
+        }
+
+        return $deadline->format(\DateTimeInterface::ATOM);
+    }
+
+    // -------------------------------------------------------------------------
+    // Worker Pool task operations (POST /a2a/work/*)
+    // These use a separate API from bounty tasks and return assignment objects.
+    // -------------------------------------------------------------------------
+
+    /**
+     * Claim a Worker Pool task.
+     * Returns the assignment object on success, null on failure.
+     *
+     * @param string $taskId
+     * @return array|null Assignment object from Hub
+     */
+    public function claimWorkerTask(string $taskId): ?array
+    {
+        $nodeId = $this->protocol->getNodeId();
+        if (empty($nodeId) || empty($taskId)) {
+            return null;
+        }
+
+        $url = $this->hubUrl . '/a2a/work/claim';
+
+        try {
+            $response = $this->httpPost($url, [
+                'task_id' => $taskId,
+                'node_id' => $nodeId,
+            ], self::CLAIM_TIMEOUT);
+
+            if ($response['status'] >= 200 && $response['status'] < 300) {
+                return $response['body'];
+            }
+            return null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Complete a Worker Pool task assignment.
+     *
+     * @param string $assignmentId
+     * @param string $resultAssetId
+     * @return bool
+     */
+    public function completeWorkerTask(string $assignmentId, string $resultAssetId): bool
+    {
+        $nodeId = $this->protocol->getNodeId();
+        if (empty($nodeId) || empty($assignmentId) || empty($resultAssetId)) {
+            return false;
+        }
+
+        $url = $this->hubUrl . '/a2a/work/complete';
+
+        try {
+            $response = $this->httpPost($url, [
+                'assignment_id' => $assignmentId,
+                'node_id' => $nodeId,
+                'result_asset_id' => $resultAssetId,
+            ], self::CLAIM_TIMEOUT);
+
+            return $response['status'] >= 200 && $response['status'] < 300;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * Atomic claim+complete for deferred worker tasks.
+     * Called from solidify after a successful evolution cycle so we never hold
+     * an assignment that might expire before completion.
+     *
+     * @param string $taskId
+     * @param string $resultAssetId sha256:... of the published capsule
+     * @return array{ok: bool, assignment_id?: string, error?: string}
+     */
+    public function claimAndCompleteWorkerTask(string $taskId, string $resultAssetId): array
+    {
+        $nodeId = $this->protocol->getNodeId();
+        if (empty($nodeId) || empty($taskId) || empty($resultAssetId)) {
+            return ['ok' => false, 'error' => 'missing_params'];
+        }
+
+        $assignment = $this->claimWorkerTask($taskId);
+        if ($assignment === null) {
+            return ['ok' => false, 'error' => 'claim_failed'];
+        }
+
+        $assignmentId = $assignment['id'] ?? $assignment['assignment_id'] ?? null;
+        if ($assignmentId === null) {
+            return ['ok' => false, 'error' => 'no_assignment_id'];
+        }
+
+        $completed = $this->completeWorkerTask($assignmentId, $resultAssetId);
+        if (!$completed) {
+            echo "[WorkerPool] Claimed assignment {$assignmentId} but complete failed -- will expire on Hub\n";
+            return ['ok' => false, 'error' => 'complete_failed', 'assignment_id' => $assignmentId];
+        }
+
+        return ['ok' => true, 'assignment_id' => $assignmentId];
     }
 
     // -------------------------------------------------------------------------

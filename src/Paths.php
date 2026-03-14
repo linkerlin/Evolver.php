@@ -61,25 +61,12 @@ final class Paths
 
     /**
      * Get session scope from environment.
-     * Sanitizes to only allow alphanumeric, dash, underscore, dot (prevent path traversal).
+     * Delegates to SessionScope class for centralized logic.
+     * @deprecated Use SessionScope::get() instead
      */
     public static function getSessionScope(): ?string
     {
-        $raw = trim($_ENV['EVOLVER_SESSION_SCOPE'] ?? '');
-        if (empty($raw)) {
-            return null;
-        }
-
-        // Sanitize: only allow alphanumeric, dash, underscore, dot
-        $safe = preg_replace('/[^a-zA-Z0-9_\-\.]/', '_', $raw);
-        $safe = substr($safe, 0, 128);
-
-        // Prevent path traversal
-        if (empty($safe) || preg_match('/^\.{1,2}$/', $safe) || str_contains($safe, '..')) {
-            return null;
-        }
-
-        return $safe;
+        return SessionScope::get();
     }
 
     /**
@@ -166,6 +153,22 @@ final class Paths
     public static function getValidationReportPath(): string
     {
         return self::getEvolutionDir() . '/validation_report.json';
+    }
+
+    /**
+     * Get narrative path.
+     */
+    public static function getNarrativePath(): string
+    {
+        return self::getEvolutionDir() . '/evolution_narrative.md';
+    }
+
+    /**
+     * Get reflection log path.
+     */
+    public static function getReflectionLogPath(): string
+    {
+        return self::getEvolutionDir() . '/reflection_log.jsonl';
     }
 
     /**

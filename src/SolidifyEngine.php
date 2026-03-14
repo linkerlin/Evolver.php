@@ -713,15 +713,8 @@ final class SolidifyEngine
             }
         }
 
-        if (!empty($violations)) {
-            return [
-                'ok' => false,
-                'violations' => $violations,
-                'warnings' => $warnings,
-                'blastSeverity' => $blastSeverity,
-                'dryRun' => $dryRun,
-            ];
-        }
+        // Note: We continue even with violations to collect complete failure info
+        // and build proper event with failure_reason for lesson extraction
 
         // 验证 gene validation commands
         $validationResults = [];
@@ -821,7 +814,7 @@ final class SolidifyEngine
 
         // 构建capsule (on success) with GEP 1.6.0 fields
         $capsuleToStore = null;
-        if ($capsule !== null || (empty($warnings) && $intent !== 'repair')) {
+        if ($success && ($capsule !== null || (empty($warnings) && $intent !== 'repair'))) {
             $capsuleData = $capsule ?? [];
             $capsuleOutcome = $capsuleData['outcome'] ?? [
                 'status' => empty($warnings) ? 'success' : 'partial',
@@ -895,6 +888,29 @@ final class SolidifyEngine
             }
         }
 
+        // --- LessonL: Add failure_reason to event metadata for Hub-side lesson extraction ---
+        $antiPatternPublishResult = null;
+        if (!$success) {
+            $failureReason = self::buildFailureReason($violations, $validationResults, $canaryResult);
+            $evolutionEvent['failure_reason'] = $failureReason;
+            $evolutionEvent['summary'] = $geneId
+                ? "Failed: {$geneId} on signals [" . implode(', ', array_slice($signals, 0, 3)) . "] - " . substr($failureReason, 0, 200)
+                : "Failed evolution on signals [" . implode(', ', array_slice($signals, 0, 3)) . "] - " . substr($failureReason, 0, 200);
+
+            // --- Anti-pattern auto-publish ---
+            $antiPatternPublishResult = $this->maybePublishAntiPattern([
+                'gene' => $gene,
+                'signals' => $signals,
+                'violations' => $violations,
+                'validationResults' => $validationResults,
+                'canaryResult' => $canaryResult,
+                'blastRadius' => $blastRadius,
+                'outcomeScore' => $outcomeScore,
+                'intent' => $intent,
+                'dryRun' => $dryRun,
+            ]);
+        }
+
         return [
             'ok' => $success,
             'eventId' => $eventId,
@@ -908,8 +924,158 @@ final class SolidifyEngine
             'blastSeverity' => $blastSeverity,
             'canary' => $canaryResult,
             'validationResults' => $validationResults,
+            'antiPatternPublishResult' => $antiPatternPublishResult,
             'dryRun' => $dryRun,
         ];
+    }
+
+    /**
+     * Build a failure reason string from constraint violations, validation results, and canary check.
+     *
+     * @param array $violations Constraint violations
+     * @param array $validationResults Validation command results
+     * @param array $canaryResult Canary check result
+     * @return string Failure reason (max 2000 chars)
+     */
+    public static function buildFailureReason(array $violations, array $validationResults, array $canaryResult): string
+    {
+        $reasons = [];
+
+        foreach ($violations as $v) {
+            $reasons[] = "constraint: {$v}";
+        }
+
+        foreach ($validationResults as $r) {
+            if (isset($r['ok']) && !$r['ok']) {
+                $cmd = substr((string)($r['cmd'] ?? ''), 0, 120);
+                $err = substr((string)($r['err'] ?? ''), 0, 200);
+                $reasons[] = "validation_failed: {$cmd} => {$err}";
+            }
+        }
+
+        if (isset($canaryResult['ok']) && !$canaryResult['ok'] && !($canaryResult['skipped'] ?? false)) {
+            $err = substr((string)($canaryResult['err'] ?? ''), 0, 200);
+            $reasons[] = "canary_failed: {$err}";
+        }
+
+        $result = implode('; ', $reasons);
+        return substr($result, 0, 2000) ?: 'unknown';
+    }
+
+    /**
+     * Maybe publish an anti-pattern asset to the Hub.
+     *
+     * Only enabled via EVOLVER_PUBLISH_ANTI_PATTERNS=true (opt-in).
+     * Only constraint violations or canary failures qualify (not routine validation failures).
+     *
+     * @param array $params{
+     *   gene?: array,
+     *   signals?: string[],
+     *   violations?: string[],
+     *   validationResults?: array,
+     *   canaryResult?: array,
+     *   blastRadius?: array,
+     *   outcomeScore?: float,
+     *   intent?: string,
+     *   dryRun?: bool
+     * }
+     * @return array{attempted: bool, asset_id?: string, reason?: string}|null
+     */
+    private function maybePublishAntiPattern(array $params): ?array
+    {
+        $dryRun = $params['dryRun'] ?? false;
+        if ($dryRun) {
+            return null;
+        }
+
+        $publishAntiPatterns = strtolower(getenv('EVOLVER_PUBLISH_ANTI_PATTERNS') ?: '') === 'true';
+        if (!$publishAntiPatterns) {
+            return null;
+        }
+
+        $hubUrl = rtrim(getenv('A2A_HUB_URL') ?: getenv('EVOMAP_HUB_URL') ?: '', '/');
+        if ($hubUrl === '') {
+            return null;
+        }
+
+        $violations = $params['violations'] ?? [];
+        $canaryResult = $params['canaryResult'] ?? [];
+        $hasHighInfoFailure = !empty($violations)
+            || (isset($canaryResult['ok']) && !$canaryResult['ok'] && !($canaryResult['skipped'] ?? false));
+
+        if (!$hasHighInfoFailure) {
+            return null;
+        }
+
+        $gene = $params['gene'] ?? null;
+        $signals = $params['signals'] ?? [];
+        $blastRadius = $params['blastRadius'] ?? ['files' => 0, 'lines' => 0];
+        $outcomeScore = $params['outcomeScore'] ?? 0.2;
+        $intent = $params['intent'] ?? 'repair';
+        $validationResults = $params['validationResults'] ?? [];
+
+        $failureReason = self::buildFailureReason($violations, $validationResults, $canaryResult);
+
+        try {
+            $timestamp = time();
+            $randomSuffix = bin2hex(random_bytes(4));
+
+            // Build anti-pattern gene
+            $apGene = $gene !== null && ($gene['type'] ?? '') === 'Gene' && isset($gene['id'])
+                ? Sanitize::sanitizePayload($gene)
+                : [
+                    'type' => 'Gene',
+                    'id' => 'gene_unknown_' . $timestamp,
+                    'category' => $intent,
+                    'signals_match' => array_slice($signals, 0, 8),
+                    'summary' => 'Failed evolution gene',
+                ];
+
+            $apGene['anti_pattern'] = true;
+            $apGene['failure_reason'] = $failureReason;
+            $apGene['asset_id'] = ContentHash::computeAssetId($apGene);
+
+            // Build anti-pattern capsule
+            $apCapsule = [
+                'type' => 'Capsule',
+                'schema_version' => ContentHash::SCHEMA_VERSION,
+                'id' => 'failed_' . $timestamp . '_' . $randomSuffix,
+                'trigger' => array_slice($signals, 0, 8),
+                'gene' => $apGene['id'],
+                'summary' => 'Anti-pattern: ' . substr($failureReason, 0, 200),
+                'confidence' => 0,
+                'blast_radius' => [
+                    'files' => (int)($blastRadius['files'] ?? 0),
+                    'lines' => (int)($blastRadius['lines'] ?? 0),
+                ],
+                'outcome' => [
+                    'status' => 'failed',
+                    'score' => $outcomeScore,
+                ],
+                'failure_reason' => $failureReason,
+                'a2a' => ['eligible_to_broadcast' => false],
+            ];
+            $apCapsule['asset_id'] = ContentHash::computeAssetId($apCapsule);
+
+            // Publish to Hub
+            $modelName = substr(getenv('EVOLVER_MODEL_NAME') ?: '', 0, 100);
+            $message = GepA2AProtocol::buildPublishBundle([
+                'gene' => $apGene,
+                'capsule' => Sanitize::sanitizePayload($apCapsule),
+                'event' => null,
+                'modelName' => $modelName ?: null,
+            ]);
+
+            // Send asynchronously (fire-and-forget)
+            $result = GepA2AProtocol::httpTransportSend($message, ['hubUrl' => $hubUrl]);
+
+            error_log("[AntiPatternPublish] Published failed bundle to Hub: " . $apCapsule['id']);
+
+            return ['attempted' => true, 'asset_id' => $apCapsule['asset_id']];
+        } catch (\Throwable $e) {
+            error_log("[AntiPatternPublish] Error (non-fatal): " . $e->getMessage());
+            return ['attempted' => false, 'reason' => $e->getMessage()];
+        }
     }
 
     /**

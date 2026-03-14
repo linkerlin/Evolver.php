@@ -477,11 +477,12 @@ final class SessionLogReader
 
     /**
      * Get the current session scope from environment.
+     * Delegates to SessionScope class for centralized logic.
+     * @deprecated Use SessionScope::get() instead
      */
     public static function getSessionScope(): ?string
     {
-        $scope = getenv(self::SESSION_SCOPE_ENV);
-        return $scope !== false && $scope !== '' ? $scope : null;
+        return SessionScope::get();
     }
 
     /**

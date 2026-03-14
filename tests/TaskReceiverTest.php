@@ -326,4 +326,131 @@ final class TaskReceiverTest extends TestCase
         $result = $this->receiver->completeTask('task_123', '');
         $this->assertFalse($result);
     }
+
+    // =========================================================================
+    // Commitment Deadline Estimation Tests
+    // =========================================================================
+
+    public function testEstimateCommitmentDeadlineReturnsIsoString(): void
+    {
+        $task = ['complexity_score' => 0.5];
+
+        $deadline = $this->receiver->estimateCommitmentDeadline($task);
+
+        $this->assertNotNull($deadline);
+        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/', $deadline);
+    }
+
+    public function testEstimateCommitmentDeadlineLowDifficulty(): void
+    {
+        $task = ['complexity_score' => 0.2];
+
+        $deadline = $this->receiver->estimateCommitmentDeadline($task);
+        $this->assertNotNull($deadline);
+
+        // Should be about 15 minutes from now
+        $deadlineTime = strtotime($deadline);
+        $expectedTime = time() + 900; // 15 minutes
+        $this->assertEqualsWithDelta($expectedTime, $deadlineTime, 5);
+    }
+
+    public function testEstimateCommitmentDeadlineHighDifficulty(): void
+    {
+        $task = ['complexity_score' => 0.9];
+
+        $deadline = $this->receiver->estimateCommitmentDeadline($task);
+        $this->assertNotNull($deadline);
+
+        // Should be about 120 minutes from now
+        $deadlineTime = strtotime($deadline);
+        $expectedTime = time() + 7200; // 120 minutes
+        $this->assertEqualsWithDelta($expectedTime, $deadlineTime, 5);
+    }
+
+    public function testEstimateCommitmentDeadlineRespectsExpiration(): void
+    {
+        // Task expires in 10 minutes
+        $expiresAt = (new \DateTimeImmutable())->modify('+10 minutes');
+        $task = [
+            'complexity_score' => 0.9, // Would normally give 120 minutes
+            'expires_at' => $expiresAt->format(\DateTimeInterface::ATOM),
+        ];
+
+        $deadline = $this->receiver->estimateCommitmentDeadline($task);
+
+        // Should respect expiration (with 1 minute buffer)
+        $this->assertNotNull($deadline);
+        $deadlineTime = strtotime($deadline);
+        $expiresTime = $expiresAt->getTimestamp() - 60; // 1 minute before expiration
+        $this->assertLessThanOrEqual($expiresTime + 5, $deadlineTime);
+    }
+
+    public function testEstimateCommitmentDeadlineReturnsNullForExpiredTask(): void
+    {
+        // Task already expired
+        $task = [
+            'complexity_score' => 0.5,
+            'expires_at' => (new \DateTimeImmutable())->modify('-1 minute')->format(\DateTimeInterface::ATOM),
+        ];
+
+        $deadline = $this->receiver->estimateCommitmentDeadline($task);
+
+        $this->assertNull($deadline);
+    }
+
+    public function testEstimateCommitmentDeadlineUsesLocalEstimate(): void
+    {
+        // No complexity_score provided, should use local estimation
+        $task = [
+            'signals' => 'error,syntax,bug,issue,fail,test,check,fix', // 8 signals
+            'title' => 'Fix critical bug in parser module causing memory leak', // 9 words
+        ];
+
+        $deadline = $this->receiver->estimateCommitmentDeadline($task);
+
+        $this->assertNotNull($deadline);
+    }
+
+    // =========================================================================
+    // Worker Pool Tests
+    // =========================================================================
+
+    public function testClaimWorkerTaskReturnsNullWithEmptyId(): void
+    {
+        $result = $this->receiver->claimWorkerTask('');
+        $this->assertNull($result);
+    }
+
+    public function testCompleteWorkerTaskReturnsFalseWithEmptyParams(): void
+    {
+        $result = $this->receiver->completeWorkerTask('', 'asset_123');
+        $this->assertFalse($result);
+
+        $result = $this->receiver->completeWorkerTask('assignment_123', '');
+        $this->assertFalse($result);
+    }
+
+    public function testClaimAndCompleteWorkerTaskReturnsErrorWithMissingParams(): void
+    {
+        $result = $this->receiver->claimAndCompleteWorkerTask('', 'asset_123');
+        $this->assertFalse($result['ok']);
+        $this->assertEquals('missing_params', $result['error']);
+
+        $result = $this->receiver->claimAndCompleteWorkerTask('task_123', '');
+        $this->assertFalse($result['ok']);
+        $this->assertEquals('missing_params', $result['error']);
+    }
+
+    public function testClaimAndCompleteWorkerTaskReturnsCorrectStructure(): void
+    {
+        // Even with valid params, it will fail because no real hub
+        $result = $this->receiver->claimAndCompleteWorkerTask('task_123', 'sha256:abc123');
+
+        $this->assertArrayHasKey('ok', $result);
+        $this->assertIsBool($result['ok']);
+
+        if (!$result['ok']) {
+            $this->assertArrayHasKey('error', $result);
+        }
+    }
 }

@@ -188,4 +188,122 @@ final class SolidifyEngineTest extends TestCase
         $this->assertFalse($this->solidifyEngine->isValidationCommandAllowed('php script.php; rm -rf /'));
         $this->assertFalse($this->solidifyEngine->isValidationCommandAllowed('php script.php && rm -rf /'));
     }
+
+    public function testBuildFailureReasonWithViolations(): void
+    {
+        $violations = ['max_files exceeded', 'critical_path_modified'];
+        $reason = SolidifyEngine::buildFailureReason($violations, [], []);
+
+        $this->assertStringContainsString('constraint: max_files exceeded', $reason);
+        $this->assertStringContainsString('constraint: critical_path_modified', $reason);
+    }
+
+    public function testBuildFailureReasonWithCanaryFailure(): void
+    {
+        $canaryResult = ['ok' => false, 'skipped' => false, 'err' => 'index.php cannot load'];
+        $reason = SolidifyEngine::buildFailureReason([], [], $canaryResult);
+
+        $this->assertStringContainsString('canary_failed', $reason);
+        $this->assertStringContainsString('index.php cannot load', $reason);
+    }
+
+    public function testBuildFailureReasonWithValidationFailure(): void
+    {
+        $validationResults = [
+            ['ok' => true, 'cmd' => 'phpcs'],
+            ['ok' => false, 'cmd' => 'phpunit tests/', 'err' => 'Tests failed'],
+        ];
+        $reason = SolidifyEngine::buildFailureReason([], $validationResults, []);
+
+        $this->assertStringContainsString('validation_failed', $reason);
+        $this->assertStringContainsString('phpunit tests/', $reason);
+        $this->assertStringContainsString('Tests failed', $reason);
+    }
+
+    public function testBuildFailureReasonReturnsUnknownWhenEmpty(): void
+    {
+        $reason = SolidifyEngine::buildFailureReason([], [], []);
+        $this->assertEquals('unknown', $reason);
+    }
+
+    public function testBuildFailureReasonTruncatesLongReason(): void
+    {
+        $violations = [];
+        for ($i = 0; $i < 100; $i++) {
+            $violations[] = str_repeat('x', 50);
+        }
+        $reason = SolidifyEngine::buildFailureReason($violations, [], []);
+        $this->assertLessThanOrEqual(2000, strlen($reason));
+    }
+
+    public function testSolidifyFailureAddsFailureReasonToEvent(): void
+    {
+        $input = [
+            'intent' => 'repair',
+            'summary' => 'Test failure reason',
+            'signals' => ['error'],
+            'gene' => [
+                'type' => 'Gene',
+                'id' => 'gene_fail',
+                'category' => 'repair',
+                'signals_match' => ['error'],
+            ],
+            'blastRadius' => ['files' => 100, 'lines' => 50000], // Exceeds limits - will fail
+            'dryRun' => false,
+        ];
+
+        $result = $this->solidifyEngine->solidify($input);
+
+        // Should have violations and fail
+        $this->assertFalse($result['ok']);
+        $this->assertNotEmpty($result['violations']);
+
+        // Event should have failure_reason
+        $this->assertArrayHasKey('failure_reason', $result['event']);
+        $this->assertNotEmpty($result['event']['failure_reason']);
+    }
+
+    public function testSolidifyFailureUpdatesEventSummary(): void
+    {
+        $input = [
+            'intent' => 'repair',
+            'summary' => 'Test summary update',
+            'signals' => ['signal_a', 'signal_b'],
+            'gene' => [
+                'type' => 'Gene',
+                'id' => 'gene_summary',
+                'category' => 'repair',
+                'signals_match' => ['signal_a'],
+            ],
+            'blastRadius' => ['files' => 100, 'lines' => 50000], // Will fail
+            'dryRun' => false,
+        ];
+
+        $result = $this->solidifyEngine->solidify($input);
+
+        $this->assertStringContainsString('Failed:', $result['event']['summary']);
+        $this->assertStringContainsString('gene_summary', $result['event']['summary']);
+    }
+
+    public function testSolidifyReturnsAntiPatternPublishResult(): void
+    {
+        $input = [
+            'intent' => 'repair',
+            'summary' => 'Test anti-pattern',
+            'signals' => ['error'],
+            'gene' => [
+                'type' => 'Gene',
+                'id' => 'gene_ap',
+                'category' => 'repair',
+                'signals_match' => ['error'],
+            ],
+            'blastRadius' => ['files' => 100, 'lines' => 50000], // Will fail
+            'dryRun' => false,
+        ];
+
+        $result = $this->solidifyEngine->solidify($input);
+
+        // Should have antiPatternPublishResult key (even if null due to disabled env)
+        $this->assertArrayHasKey('antiPatternPublishResult', $result);
+    }
 }

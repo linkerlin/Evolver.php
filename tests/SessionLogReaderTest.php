@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Evolver\Tests;
 
 use Evolver\SessionLogReader;
+use Evolver\SessionScope;
 use PHPUnit\Framework\TestCase;
 
 final class SessionLogReaderTest extends TestCase
@@ -14,6 +15,7 @@ final class SessionLogReaderTest extends TestCase
 
     protected function setUp(): void
     {
+        SessionScope::reset();
         $this->reader = new SessionLogReader();
         $this->tempDir = sys_get_temp_dir() . '/evolver_test_' . uniqid();
         mkdir($this->tempDir, 0755, true);
@@ -21,6 +23,7 @@ final class SessionLogReaderTest extends TestCase
 
     protected function tearDown(): void
     {
+        SessionScope::reset();
         // Clean up temp directory
         if (is_dir($this->tempDir)) {
             $iterator = new \RecursiveIteratorIterator(
@@ -178,11 +181,13 @@ final class SessionLogReaderTest extends TestCase
     {
         // Test with no scope set
         putenv('EVOLVER_SESSION_SCOPE=');
+        SessionScope::reset();
         $scope = SessionLogReader::getSessionScope();
         $this->assertNull($scope);
 
         // Test with scope set
         putenv('EVOLVER_SESSION_SCOPE=test_project');
+        SessionScope::reset();
         $scope = SessionLogReader::getSessionScope();
         $this->assertEquals('test_project', $scope);
 
@@ -206,17 +211,17 @@ final class SessionLogReaderTest extends TestCase
     public function testIsEvolverSessionDetection(): void
     {
         // Create a mock evolver session file
-        $evolverFile = $this->tempDir . '/evolution_test.jsonl';
+        $evolverFile = $this->tempDir . DIRECTORY_SEPARATOR . 'evolution_test.jsonl';
         file_put_contents($evolverFile, json_encode(['gene_id' => 'test_gene', 'type' => 'evolution']) . "\n");
 
         // Create a regular session file
-        $regularFile = $this->tempDir . '/user_session.jsonl';
+        $regularFile = $this->tempDir . DIRECTORY_SEPARATOR . 'user_session.jsonl';
         file_put_contents($regularFile, json_encode(['message' => 'Hello']) . "\n");
 
         // We can't directly test isEvolverSession since it's private,
         // but we can test via findSessionFiles
         putenv('SESSIONS_DIR=' . $this->tempDir);
-        
+
         $files = $this->reader->findSessionFiles();
         $paths = array_column($files, 'path');
 

@@ -33,5 +33,6 @@
 .env
 composer.lock
 .phpunit.result.cache
+*.log
 
 .evolution/

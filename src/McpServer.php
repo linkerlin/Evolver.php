@@ -901,8 +901,9 @@ final class McpServer
     {
         $query = $args['query'];
         $limit = $args['limit'];
-        $scope = $args['scope'];
-        $category = $args['category'];
+        $scope = $args['scope'] ?? null;
+        $category = $args['category'] ?? null;
+        $minScore = $args['minScore'] ?? 0.3;
 
         $options = [];
         if ($scope !== null) {
@@ -913,7 +914,7 @@ final class McpServer
         }
 
         $retriever = $this->getMemoryRetriever();
-        $retriever->updateConfig(['hardMinScore' => $args['minScore']]);
+        $retriever->updateConfig(['hardMinScore' => $minScore]);
         
         $results = $retriever->retrieve($query, $limit, $options);
 
@@ -938,9 +939,9 @@ final class McpServer
         $type = $args['type'];
         $id = $args['id'] ?? ('mem_' . time() . '_' . bin2hex(random_bytes(4)));
         $importance = $args['importance'];
-        $category = $args['category'];
-        $scope = $args['scope'];
-        $metadata = $args['metadata'];
+        $category = $args['category'] ?? null;
+        $scope = $args['scope'] ?? null;
+        $metadata = $args['metadata'] ?? [];
 
         // Build metadata
         $metadata['importance'] = $importance;
@@ -953,7 +954,12 @@ final class McpServer
         }
 
         // Determine initial tier based on importance
-        $tier = $this->getTierManager()->recommendInitialTier($importance, $category ?? 'other');
+        // Use importance as confidence default (can be refined later with explicit confidence param)
+        $tier = $this->getTierManager()->recommendInitialTier(
+            (float) $importance,
+            (float) $importance,
+            $category ?? 'other'
+        );
         $metadata['tier'] = $tier;
 
         // Store in vector index
@@ -1023,9 +1029,29 @@ final class McpServer
             ];
         }
 
-        // Get tier stats
+        // Get tier stats - load all memories from vector store
         $tierManager = $this->getTierManager();
-        $stats = $tierManager->getTierStats();
+        $memories = [];
+
+        $rows = $this->db->fetchAll(
+            'SELECT id, metadata FROM vector_index WHERE vector IS NOT NULL'
+        );
+
+        foreach ($rows as $row) {
+            $metadata = json_decode($row['metadata'] ?? '{}', true);
+            $smartMetadata = SmartMetadata::fromArray($metadata);
+            $memories[] = new SimpleDecayableMemory(
+                id: $row['id'],
+                tier: $smartMetadata->tier,
+                importance: $metadata['importance'] ?? 0.7,
+                confidence: $smartMetadata->confidence,
+                accessCount: $smartMetadata->accessCount,
+                createdAt: $smartMetadata->createdAt ?? $now,
+                lastAccessedAt: $smartMetadata->lastAccessedAt ?? $now,
+            );
+        }
+
+        $stats = $tierManager->getTierStats($memories);
 
         // Get prunable memories if requested
         $prunable = [];

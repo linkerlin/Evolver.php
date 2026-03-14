@@ -423,6 +423,159 @@ final class McpServerTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // MCP Tool: evolver_remember Tests
+    // -------------------------------------------------------------------------
+
+    public function testToolEvolverRememberBasic(): void
+    {
+        $args = [
+            'text' => 'Test memory content for evolver_remember',
+            'type' => 'capsule',
+            'importance' => 0.8,
+            'category' => 'test',
+            'scope' => 'testing',
+            'metadata' => ['foo' => 'bar'],
+        ];
+
+        $result = $this->invokePrivateMethod('toolEvolverRemember', [$args]);
+
+        // Should succeed or fail gracefully (embedder may not be available)
+        $this->assertArrayHasKey('ok', $result);
+        if ($result['ok']) {
+            $this->assertArrayHasKey('id', $result);
+            $this->assertArrayHasKey('type', $result);
+            $this->assertArrayHasKey('tier', $result);
+            // Tier should be one of the valid tiers
+            $this->assertContains($result['tier'], ['core', 'working', 'peripheral']);
+        } else {
+            $this->assertArrayHasKey('error', $result);
+        }
+    }
+
+    public function testToolEvolverRememberWithHighImportanceGetsCoreTier(): void
+    {
+        $args = [
+            'text' => 'Important memory that should go to core tier',
+            'type' => 'gene',
+            'importance' => 0.95,
+            'category' => 'profile',
+        ];
+
+        $result = $this->invokePrivateMethod('toolEvolverRemember', [$args]);
+
+        if ($result['ok']) {
+            // High importance + profile category should get core tier
+            $this->assertSame('core', $result['tier']);
+        }
+    }
+
+    public function testToolEvolverRememberWithLowImportanceGetsPeripheralTier(): void
+    {
+        $args = [
+            'text' => 'Low importance memory for peripheral tier',
+            'type' => 'event',
+            'importance' => 0.2,
+        ];
+
+        $result = $this->invokePrivateMethod('toolEvolverRemember', [$args]);
+
+        if ($result['ok']) {
+            $this->assertSame('peripheral', $result['tier']);
+        }
+    }
+
+    public function testToolEvolverRememberWithChineseText(): void
+    {
+        $args = [
+            'text' => '这是一个中文记忆内容测试',
+            'type' => 'capsule',
+            'importance' => 0.7,
+        ];
+
+        $result = $this->invokePrivateMethod('toolEvolverRemember', [$args]);
+
+        // Should handle Chinese text without type errors
+        $this->assertArrayHasKey('ok', $result);
+    }
+
+    // -------------------------------------------------------------------------
+    // MCP Tool: evolver_recall Tests
+    // -------------------------------------------------------------------------
+
+    public function testToolEvolverRecallBasic(): void
+    {
+        $args = [
+            'query' => 'test query',
+            'limit' => 5,
+        ];
+
+        $result = $this->invokePrivateMethod('toolEvolverRecall', [$args]);
+
+        $this->assertTrue($result['ok']);
+        $this->assertArrayHasKey('query', $result);
+        $this->assertArrayHasKey('count', $result);
+        $this->assertArrayHasKey('results', $result);
+        $this->assertArrayHasKey('mode', $result);
+    }
+
+    // -------------------------------------------------------------------------
+    // MCP Tool: evolver_decay_status Tests
+    // -------------------------------------------------------------------------
+
+    public function testToolEvolverDecayStatusBasic(): void
+    {
+        $args = [
+            'id' => null,
+            'tier' => null,
+            'includePrunable' => false,
+        ];
+
+        $result = $this->invokePrivateMethod('toolEvolverDecayStatus', [$args]);
+
+        $this->assertTrue($result['ok']);
+        $this->assertArrayHasKey('tier_stats', $result);
+        $this->assertArrayHasKey('total_vectors', $result);
+
+        // tier_stats should have the expected structure
+        $stats = $result['tier_stats'];
+        $this->assertArrayHasKey('total', $stats);
+        $this->assertArrayHasKey('core', $stats);
+        $this->assertArrayHasKey('working', $stats);
+        $this->assertArrayHasKey('peripheral', $stats);
+    }
+
+    public function testToolEvolverDecayStatusWithPrunable(): void
+    {
+        $args = [
+            'id' => null,
+            'tier' => null,
+            'includePrunable' => true,
+        ];
+
+        $result = $this->invokePrivateMethod('toolEvolverDecayStatus', [$args]);
+
+        $this->assertTrue($result['ok']);
+        $this->assertArrayHasKey('prunable', $result);
+        $this->assertArrayHasKey('prunable_count', $result);
+        $this->assertIsArray($result['prunable']);
+    }
+
+    public function testToolEvolverDecayStatusWithNonexistentId(): void
+    {
+        $args = [
+            'id' => 'nonexistent_memory_id_12345',
+            'tier' => null,
+            'includePrunable' => false,
+        ];
+
+        $result = $this->invokePrivateMethod('toolEvolverDecayStatus', [$args]);
+
+        $this->assertFalse($result['ok']);
+        $this->assertArrayHasKey('error', $result);
+        $this->assertStringContainsString('not found', $result['error']);
+    }
+
+    // -------------------------------------------------------------------------
     // MCP Tool: evolver_stats Tests
     // -------------------------------------------------------------------------
 

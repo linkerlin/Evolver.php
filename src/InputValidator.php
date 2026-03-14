@@ -196,6 +196,105 @@ final class InputValidator
         return $validated;
     }
 
+    /**
+     * Validate evolver_recall tool parameters (memory retrieval).
+     */
+    public static function validateEvolverRecall(array $args): array
+    {
+        $validated = [];
+        
+        // query: required string
+        $validated['query'] = self::validateString($args['query'] ?? '', 'query', 1, 10000);
+        
+        // limit: optional int (max 50)
+        $validated['limit'] = self::validateInt($args['limit'] ?? 10, 'limit', 1, 50);
+        
+        // scope: optional string
+        $validated['scope'] = isset($args['scope'])
+            ? self::validateString($args['scope'], 'scope', 1, 256)
+            : null;
+        
+        // category: optional string
+        $validated['category'] = isset($args['category'])
+            ? self::validateString($args['category'], 'category', 1, 64)
+            : null;
+        
+        // minScore: optional float
+        $validated['minScore'] = isset($args['minScore'])
+            ? self::validateFloat($args['minScore'], 'minScore', 0.0, 1.0)
+            : 0.3;
+        
+        return $validated;
+    }
+
+    /**
+     * Validate evolver_remember tool parameters (memory storage).
+     */
+    public static function validateEvolverRemember(array $args): array
+    {
+        $validated = [];
+        
+        // text: required string
+        $validated['text'] = self::validateString($args['text'] ?? '', 'text', 1, self::MAX_STRING_LENGTH);
+        
+        // type: required enum (gene, capsule, event)
+        $validated['type'] = self::validateEnum(
+            $args['type'] ?? 'capsule',
+            'type',
+            ['gene', 'capsule', 'event']
+        );
+        
+        // id: optional string (will generate if not provided)
+        $validated['id'] = isset($args['id'])
+            ? self::validateString($args['id'], 'id', 1, 256)
+            : null;
+        
+        // importance: optional float
+        $validated['importance'] = isset($args['importance'])
+            ? self::validateFloat($args['importance'], 'importance', 0.0, 1.0)
+            : 0.7;
+        
+        // category: optional string
+        $validated['category'] = isset($args['category'])
+            ? self::validateString($args['category'], 'category', 1, 64)
+            : null;
+        
+        // scope: optional string
+        $validated['scope'] = isset($args['scope'])
+            ? self::validateString($args['scope'], 'scope', 1, 256)
+            : null;
+        
+        // metadata: optional array
+        $validated['metadata'] = isset($args['metadata'])
+            ? self::validateArray($args['metadata'], 'metadata', 0, self::MAX_ARRAY_SIZE)
+            : [];
+        
+        return $validated;
+    }
+
+    /**
+     * Validate evolver_decay_status tool parameters.
+     */
+    public static function validateEvolverDecayStatus(array $args): array
+    {
+        $validated = [];
+        
+        // id: optional string (if not provided, returns all stats)
+        $validated['id'] = isset($args['id'])
+            ? self::validateString($args['id'], 'id', 1, 256)
+            : null;
+        
+        // tier: optional enum
+        $validated['tier'] = isset($args['tier'])
+            ? self::validateEnum($args['tier'], 'tier', ['core', 'working', 'peripheral'])
+            : null;
+        
+        // includePrunable: optional bool
+        $validated['includePrunable'] = self::validateBool($args['includePrunable'] ?? false, 'includePrunable');
+        
+        return $validated;
+    }
+
     // -------------------------------------------------------------------------
     // Generic validation helpers
     // -------------------------------------------------------------------------
@@ -254,6 +353,26 @@ final class InputValidator
             throw new \InvalidArgumentException("{$field} must be a boolean");
         }
         return $value;
+    }
+
+    /**
+     * Validate a float value.
+     */
+    private static function validateFloat(mixed $value, string $field, float $min, float $max): float
+    {
+        if (!is_numeric($value)) {
+            throw new \InvalidArgumentException("{$field} must be a number");
+        }
+        
+        $floatValue = (float)$value;
+        if ($floatValue < $min) {
+            throw new \InvalidArgumentException("{$field} must be at least {$min}");
+        }
+        if ($floatValue > $max) {
+            throw new \InvalidArgumentException("{$field} must be at most {$max}");
+        }
+        
+        return $floatValue;
     }
 
     /**

@@ -15,7 +15,7 @@ final class Database
     private array $migrationLog = [];
 
     /** Current schema version */
-    private const SCHEMA_VERSION = '1.7.0';
+    private const SCHEMA_VERSION = '1.8.0';
 
     public function __construct(string $path)
     {
@@ -177,6 +177,9 @@ final class Database
         if (version_compare($currentVersion, '1.7.0', '<')) {
             $this->migrateTo170();
         }
+        if (version_compare($currentVersion, '1.8.0', '<')) {
+            $this->migrateTo180();
+        }
 
         // 更新schema version
         $this->setSchemaVersion(self::SCHEMA_VERSION);
@@ -335,6 +338,65 @@ final class Database
     }
 
     /**
+     * D2: Smart Metadata 列，用于长期记忆生命周期管理。
+     */
+    private function migrateTo180(): void
+    {
+        $this->migrationLog[] = "Running migration to 1.8.0";
+
+        // 为 capsules 表添加 smart metadata 列
+        $this->addColumnIfNotExists('capsules', 'smart_metadata', 'TEXT DEFAULT "{}"');
+        $this->addColumnIfNotExists('capsules', 'tier', 'TEXT DEFAULT "working"');
+        $this->addColumnIfNotExists('capsules', 'access_count', 'INTEGER DEFAULT 0');
+        $this->addColumnIfNotExists('capsules', 'last_accessed_at', 'INTEGER DEFAULT 0');
+        $this->addColumnIfNotExists('capsules', 'importance', 'REAL DEFAULT 0.5');
+
+        // 为 events 表添加 smart metadata 列
+        $this->addColumnIfNotExists('events', 'smart_metadata', 'TEXT DEFAULT "{}"');
+        $this->addColumnIfNotExists('events', 'tier', 'TEXT DEFAULT "working"');
+        $this->addColumnIfNotExists('events', 'access_count', 'INTEGER DEFAULT 0');
+
+        // 为 genes 表添加 smart metadata 列
+        $this->addColumnIfNotExists('genes', 'smart_metadata', 'TEXT DEFAULT "{}"');
+        $this->addColumnIfNotExists('genes', 'tier', 'TEXT DEFAULT "working"');
+
+        // 创建向量索引表 (为 Phase 3 准备)
+        $this->db->exec(<<<'SQL'
+            CREATE TABLE IF NOT EXISTS vector_index (
+                id TEXT PRIMARY KEY,
+                type TEXT NOT NULL,
+                text TEXT NOT NULL,
+                vector TEXT,
+                metadata TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        SQL);
+
+        // 添加 tier 相关索引
+        $this->addIndexIfNotExists('capsules', 'idx_capsules_tier', 'tier');
+        $this->addIndexIfNotExists('capsules', 'idx_capsules_access', 'access_count DESC');
+        $this->addIndexIfNotExists('events', 'idx_events_tier', 'tier');
+        $this->addIndexIfNotExists('vector_index', 'idx_vector_type', 'type');
+    }
+
+    /**
+     * 添加 an index to a table if it doesn't exist.
+     */
+    private function addIndexIfNotExists(string $table, string $indexName, string $columns): void
+    {
+        try {
+            $safeTable = $this->validateSqlIdentifier($table);
+            $safeIndexName = $this->validateSqlIdentifier($indexName);
+            $columnList = array_map('trim', explode(',', $columns));
+            $safeColumns = implode(', ', array_map([$this, 'validateSqlIdentifier'], $columnList));
+
+            $this->db->exec("CREATE INDEX IF NOT EXISTS {$safeIndexName} ON {$safeTable}({$safeColumns})");
+        } catch (\Exception $e) {
+            $this->migrationLog[] = "Warning: Could not create index {$indexName}: " . $e->getMessage();
+        }
+    }
+
+    /**
      * Validate SQL identifier (table/column/index name) for safety.
      * Only allows alphanumeric characters and underscores.
      */
@@ -385,8 +447,8 @@ final class Database
         }
         
         // Validate the full type definition allows only safe characters
-        // Allows: alphanumeric, spaces, parentheses, commas, underscores, quotes for defaults
-        if (!preg_match('/^[a-zA-Z0-9_\s\(\),\'"\.]+$/', $trimmedType)) {
+        // Allows: alphanumeric, spaces, parentheses, commas, underscores, quotes, braces for defaults
+        if (!preg_match('/^[a-zA-Z0-9_\s\(\),\'"\.\{\}]+$/', $trimmedType)) {
             throw new \InvalidArgumentException("Invalid SQL type format: {$type}");
         }
         

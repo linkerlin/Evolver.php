@@ -30,6 +30,10 @@ final class McpServer
     private ?LifecycleManager $lifecycleManager;
     private ?DiskCleaner $diskCleaner;
     private ?SignalDeduplicator $signalDeduplicator;
+    private ?VectorStore $vectorStore;
+    private ?MemoryRetriever $memoryRetriever;
+    private ?DecayEngine $decayEngine;
+    private ?TierManager $tierManager;
 
     /** @var resource */
     private $stdin;
@@ -63,6 +67,12 @@ final class McpServer
         $this->lifecycleManager = new LifecycleManager();
         $this->diskCleaner = new DiskCleaner();
         $this->signalDeduplicator = new SignalDeduplicator();
+        
+        // 初始化 memory components (lazy-loaded on first use)
+        $this->vectorStore = null;
+        $this->memoryRetriever = null;
+        $this->decayEngine = null;
+        $this->tierManager = null;
 
         $this->stdin = STDIN;
         $this->stdout = STDOUT;
@@ -242,6 +252,9 @@ final class McpServer
                 'evolver_safety_status' => [],
                 'evolver_cleanup' => [],
                 'evolver_sync_to_hub' => [],
+                'evolver_recall' => InputValidator::validateEvolverRecall($arguments),
+                'evolver_remember' => InputValidator::validateEvolverRemember($arguments),
+                'evolver_decay_status' => InputValidator::validateEvolverDecayStatus($arguments),
                 default => throw new \InvalidArgumentException("Unknown tool: {$toolName}"),
             };
 
@@ -259,6 +272,9 @@ final class McpServer
                 'evolver_safety_status' => $this->toolEvolverSafetyStatus(),
                 'evolver_cleanup' => $this->toolEvolverCleanup(),
                 'evolver_sync_to_hub' => $this->toolEvolverSyncToHub(),
+                'evolver_recall' => $this->toolEvolverRecall($validatedArgs),
+                'evolver_remember' => $this->toolEvolverRemember($validatedArgs),
+                'evolver_decay_status' => $this->toolEvolverDecayStatus($validatedArgs),
                 default => throw new \InvalidArgumentException("Unknown tool: {$toolName}"),
             };
         } catch (\InvalidArgumentException $e) {
@@ -825,6 +841,245 @@ final class McpServer
         ];
     }
 
+    // -------------------------------------------------------------------------
+    // Memory tools (Phase 6)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Get or create VectorStore instance (lazy initialization).
+     */
+    private function getVectorStore(): VectorStore
+    {
+        if ($this->vectorStore === null) {
+            $embedder = new OpenAIEmbedder();
+            $this->vectorStore = new VectorStore($this->db, $embedder);
+        }
+        return $this->vectorStore;
+    }
+
+    /**
+     * Get or create MemoryRetriever instance (lazy initialization).
+     */
+    private function getMemoryRetriever(): MemoryRetriever
+    {
+        if ($this->memoryRetriever === null) {
+            $this->memoryRetriever = new MemoryRetriever(
+                $this->db,
+                $this->getVectorStore(),
+                $this->getDecayEngine()
+            );
+        }
+        return $this->memoryRetriever;
+    }
+
+    /**
+     * Get or create DecayEngine instance (lazy initialization).
+     */
+    private function getDecayEngine(): DecayEngine
+    {
+        if ($this->decayEngine === null) {
+            $this->decayEngine = new DecayEngine();
+        }
+        return $this->decayEngine;
+    }
+
+    /**
+     * Get or create TierManager instance (lazy initialization).
+     */
+    private function getTierManager(): TierManager
+    {
+        if ($this->tierManager === null) {
+            $this->tierManager = new TierManager();
+        }
+        return $this->tierManager;
+    }
+
+    /**
+     * evolver_recall: Hybrid search for memories using vector + BM25.
+     */
+    private function toolEvolverRecall(array $args): array
+    {
+        $query = $args['query'];
+        $limit = $args['limit'];
+        $scope = $args['scope'];
+        $category = $args['category'];
+
+        $options = [];
+        if ($scope !== null) {
+            $options['scope'] = $scope;
+        }
+        if ($category !== null) {
+            $options['category'] = $category;
+        }
+
+        $retriever = $this->getMemoryRetriever();
+        $retriever->updateConfig(['hardMinScore' => $args['minScore']]);
+        
+        $results = $retriever->retrieve($query, $limit, $options);
+
+        // Convert to arrays for JSON response
+        $items = array_map(fn(RetrievalResult $r) => $r->toArray(), $results);
+
+        return [
+            'ok' => true,
+            'query' => $query,
+            'count' => count($items),
+            'results' => $items,
+            'mode' => $retriever->getConfig()['mode'],
+        ];
+    }
+
+    /**
+     * evolver_remember: Store new memory with embedding.
+     */
+    private function toolEvolverRemember(array $args): array
+    {
+        $text = $args['text'];
+        $type = $args['type'];
+        $id = $args['id'] ?? ('mem_' . time() . '_' . bin2hex(random_bytes(4)));
+        $importance = $args['importance'];
+        $category = $args['category'];
+        $scope = $args['scope'];
+        $metadata = $args['metadata'];
+
+        // Build metadata
+        $metadata['importance'] = $importance;
+        $metadata['timestamp'] = (int)(microtime(true) * 1000);
+        if ($category !== null) {
+            $metadata['category'] = $category;
+        }
+        if ($scope !== null) {
+            $metadata['scope'] = $scope;
+        }
+
+        // Determine initial tier based on importance
+        $tier = $this->getTierManager()->recommendInitialTier($importance, $category ?? 'other');
+        $metadata['tier'] = $tier;
+
+        // Store in vector index
+        $vectorStore = $this->getVectorStore();
+        $success = $vectorStore->store($type, $id, $text, $metadata);
+
+        if (!$success) {
+            return [
+                'ok' => false,
+                'error' => 'Failed to store memory (embedder may not be available)',
+            ];
+        }
+
+        return [
+            'ok' => true,
+            'id' => $id,
+            'type' => $type,
+            'tier' => $tier,
+            'has_embedding' => $vectorStore->getVector($id) !== null,
+            'message' => 'Memory stored successfully',
+        ];
+    }
+
+    /**
+     * evolver_decay_status: Check decay status of memories.
+     */
+    private function toolEvolverDecayStatus(array $args): array
+    {
+        $id = $args['id'];
+        $tier = $args['tier'];
+        $includePrunable = $args['includePrunable'];
+
+        $vectorStore = $this->getVectorStore();
+        $decayEngine = $this->getDecayEngine();
+        $now = (int)(microtime(true) * 1000);
+
+        // If specific ID requested
+        if ($id !== null) {
+            $metadata = $vectorStore->getMetadata($id);
+            if ($metadata === null) {
+                return [
+                    'ok' => false,
+                    'error' => "Memory not found: {$id}",
+                ];
+            }
+
+            $text = $vectorStore->getText($id);
+            $smartMetadata = SmartMetadata::fromArray($metadata);
+            $memory = new SimpleDecayableMemory(
+                id: $id,
+                tier: $smartMetadata->tier,
+                importance: $metadata['importance'] ?? 0.7,
+                confidence: $smartMetadata->confidence,
+                accessCount: $smartMetadata->accessCount,
+                createdAt: $smartMetadata->createdAt ?? $now,
+                lastAccessedAt: $smartMetadata->lastAccessedAt ?? $now,
+            );
+
+            $score = $decayEngine->score($memory, $now);
+
+            return [
+                'ok' => true,
+                'id' => $id,
+                'text_preview' => $text !== null ? substr($text, 0, 200) : null,
+                'decay_score' => $score->toArray(),
+                'is_healthy' => $decayEngine->isHealthy($memory, $now),
+            ];
+        }
+
+        // Get tier stats
+        $tierManager = $this->getTierManager();
+        $stats = $tierManager->getTierStats();
+
+        // Get prunable memories if requested
+        $prunable = [];
+        if ($includePrunable) {
+            // Query memories with low decay scores
+            $rows = $this->db->fetchAll(
+                'SELECT id, type, metadata FROM vector_index WHERE vector IS NOT NULL LIMIT 100'
+            );
+
+            foreach ($rows as $row) {
+                $metadata = json_decode($row['metadata'] ?? '{}', true);
+                $smartMetadata = SmartMetadata::fromArray($metadata);
+
+                // Filter by tier if specified
+                if ($tier !== null && $smartMetadata->tier !== $tier) {
+                    continue;
+                }
+
+                $memory = new SimpleDecayableMemory(
+                    id: $row['id'],
+                    tier: $smartMetadata->tier,
+                    importance: $metadata['importance'] ?? 0.7,
+                    confidence: $smartMetadata->confidence,
+                    accessCount: $smartMetadata->accessCount,
+                    createdAt: $smartMetadata->createdAt ?? $now,
+                    lastAccessedAt: $smartMetadata->lastAccessedAt ?? $now,
+                );
+
+                $score = $decayEngine->score($memory, $now);
+                if ($score->composite < 0.3 && $smartMetadata->tier !== 'core') {
+                    $prunable[] = [
+                        'id' => $row['id'],
+                        'type' => $row['type'],
+                        'tier' => $smartMetadata->tier,
+                        'score' => $score->composite,
+                    ];
+                }
+            }
+
+            // Sort by score ascending (lowest first)
+            usort($prunable, fn($a, $b) => $a['score'] <=> $b['score']);
+            $prunable = array_slice($prunable, 0, 20);
+        }
+
+        return [
+            'ok' => true,
+            'tier_stats' => $stats,
+            'prunable_count' => count($prunable),
+            'prunable' => $prunable,
+            'total_vectors' => $vectorStore->count(),
+            'vectors_with_embeddings' => $vectorStore->countWithVectors(),
+        ];
+    }
+
     private function getHubUrlFromEnv(): string
     {
         return getenv('A2A_HUB_URL') ?: getenv('EVOMAP_HUB_URL') ?: 'https://evomap.ai';
@@ -1379,6 +1634,103 @@ final class McpServer
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => new \stdClass(),
+                    'required' => [],
+                ],
+            ],
+            [
+                'name' => 'evolver_recall',
+                'description' => '🧠 Recall memories using hybrid search (vector + BM25). Returns relevant memories with scores and sources.',
+                'inputSchema' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'query' => [
+                            'type' => 'string',
+                            'description' => 'Search query to find relevant memories',
+                        ],
+                        'limit' => [
+                            'type' => 'integer',
+                            'description' => 'Maximum number of results to return',
+                            'default' => 10,
+                        ],
+                        'scope' => [
+                            'type' => 'string',
+                            'description' => 'Filter by scope (e.g., project name)',
+                        ],
+                        'category' => [
+                            'type' => 'string',
+                            'description' => 'Filter by category (gene, capsule, event)',
+                        ],
+                        'minScore' => [
+                            'type' => 'number',
+                            'description' => 'Minimum relevance score (0.0-1.0)',
+                            'default' => 0.3,
+                        ],
+                    ],
+                    'required' => ['query'],
+                ],
+            ],
+            [
+                'name' => 'evolver_remember',
+                'description' => '💾 Store a new memory with automatic embedding. Supports genes, capsules, and events.',
+                'inputSchema' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'text' => [
+                            'type' => 'string',
+                            'description' => 'The memory content to store',
+                        ],
+                        'type' => [
+                            'type' => 'string',
+                            'enum' => ['gene', 'capsule', 'event'],
+                            'description' => 'Type of memory (gene=template, capsule=result, event=record)',
+                            'default' => 'capsule',
+                        ],
+                        'id' => [
+                            'type' => 'string',
+                            'description' => 'Optional unique ID (auto-generated if not provided)',
+                        ],
+                        'importance' => [
+                            'type' => 'number',
+                            'description' => 'Importance score (0.0-1.0), affects tier placement',
+                            'default' => 0.7,
+                        ],
+                        'category' => [
+                            'type' => 'string',
+                            'description' => 'Category tag for filtering',
+                        ],
+                        'scope' => [
+                            'type' => 'string',
+                            'description' => 'Scope tag (e.g., project name)',
+                        ],
+                        'metadata' => [
+                            'type' => 'object',
+                            'description' => 'Additional metadata to store',
+                        ],
+                    ],
+                    'required' => ['text'],
+                ],
+            ],
+            [
+                'name' => 'evolver_decay_status',
+                'description' => '📉 Check decay status of memories. Shows tier statistics and optionally lists prunable memories.',
+                'inputSchema' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'id' => [
+                            'type' => 'string',
+                            'description' => 'Specific memory ID to check (optional)',
+                        ],
+                        'tier' => [
+                            'type' => 'string',
+                            'enum' => ['core', 'working', 'peripheral'],
+                            'description' => 'Filter by tier when listing prunable memories',
+                        ],
+                        'includePrunable' => [
+                            'type' => 'boolean',
+                            'description' => 'Include list of memories eligible for pruning',
+                            'default' => false,
+                        ],
+                    ],
                     'required' => [],
                 ],
             ],

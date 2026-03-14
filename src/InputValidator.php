@@ -157,6 +157,16 @@ final class InputValidator
     }
 
     /**
+     * Validate evolver_metrics tool parameters (E1 后馈指标).
+     */
+    public static function validateEvolverMetrics(array $args): array
+    {
+        $validated = [];
+        $validated['limit'] = self::validateInt($args['limit'] ?? 50, 'limit', 1, 500);
+        return $validated;
+    }
+
+    /**
      * Validate evolver_upsert_gene tool parameters.
      */
     public static function validateEvolverUpsertGene(array $args): array

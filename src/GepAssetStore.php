@@ -377,6 +377,49 @@ final class GepAssetStore
     }
 
     // -------------------------------------------------------------------------
+    // D1: Run tracker (run→solidify 闭环覆盖率)
+    // -------------------------------------------------------------------------
+
+    public function recordRun(string $runId): void
+    {
+        $this->db->exec(
+            "INSERT OR IGNORE INTO run_tracker (run_id, created_at) VALUES (?, datetime('now'))",
+            [$runId]
+        );
+    }
+
+    public function markRunSolidified(string $runId): void
+    {
+        $this->db->exec(
+            "UPDATE run_tracker SET solidified_at = datetime('now') WHERE run_id = ?",
+            [$runId]
+        );
+    }
+
+    /**
+     * @return array{total: int, solidified: int, closure_rate: float}
+     */
+    public function getRunClosureStats(int $limit = 100): array
+    {
+        $rows = $this->db->fetchAll(
+            "SELECT run_id, solidified_at FROM run_tracker ORDER BY created_at DESC LIMIT ?",
+            [$limit]
+        );
+        $total = count($rows);
+        $solidified = 0;
+        foreach ($rows as $r) {
+            if (!empty($r['solidified_at'])) {
+                $solidified++;
+            }
+        }
+        return [
+            'total' => $total,
+            'solidified' => $solidified,
+            'closure_rate' => $total > 0 ? $solidified / $total : 0.0,
+        ];
+    }
+
+    // -------------------------------------------------------------------------
     // Stats
     // -------------------------------------------------------------------------
 

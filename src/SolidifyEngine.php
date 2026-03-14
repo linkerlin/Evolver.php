@@ -599,6 +599,58 @@ final class SolidifyEngine
     }
 
     /**
+     * D2: 将 validation 规范为按 level 排序的步骤列表。支持元素为 string（视为 level 1）或 { level: 0|1|2, cmd: string }。
+     *
+     * @param array<int, string|array{level?: int, cmd?: string}> $validation
+     * @return array<int, array{level: int, cmd: string}>
+     */
+    public static function normalizeValidationSteps(array $validation): array
+    {
+        $steps = [];
+        foreach ($validation as $v) {
+            if (is_string($v)) {
+                $steps[] = ['level' => 1, 'cmd' => $v];
+            } elseif (is_array($v) && isset($v['cmd'])) {
+                $level = (int)($v['level'] ?? 1);
+                $level = max(0, min(2, $level));
+                $steps[] = ['level' => $level, 'cmd' => (string)$v['cmd']];
+            }
+        }
+        usort($steps, fn($a, $b) => $a['level'] <=> $b['level']);
+        return $steps;
+    }
+
+    /**
+     * F3/E2.1: 构建控制变量（信号与 gene 池版本、validation 范围、爆炸半径预算）便于实验复现。
+     *
+     * @param array<string, mixed>|null $gene
+     * @param array<string, mixed> $blastRadius
+     * @return array{signal_schema: string, validation_scope: array<string>, blast_budget: array{max_files: int, max_lines: int}}
+     */
+    public static function buildControlVariables(?array $gene, array $blastRadius): array
+    {
+        $validationScope = [];
+        if ($gene !== null && !empty($gene['validation'])) {
+            foreach (self::normalizeValidationSteps($gene['validation']) as $s) {
+                $validationScope[] = $s['cmd'];
+            }
+        }
+        $constraints = ($gene !== null && is_array($gene)) ? ($gene['constraints'] ?? null) : null;
+        $maxFiles = is_array($constraints) && isset($constraints['max_files'])
+            ? (int)$constraints['max_files']
+            : self::MAX_FILES_HARD_LIMIT;
+        $maxLines = (int)($blastRadius['lines'] ?? 0);
+        return [
+            'signal_schema' => ContentHash::SCHEMA_VERSION,
+            'validation_scope' => $validationScope,
+            'blast_budget' => [
+                'max_files' => min($maxFiles, self::MAX_FILES_HARD_LIMIT),
+                'max_lines' => min($maxLines, self::MAX_LINES_HARD_LIMIT),
+            ],
+        ];
+    }
+
+    /**
      * Solidify an evolution result.
      *
      * @param array{
@@ -632,6 +684,10 @@ final class SolidifyEngine
         $context = $input['context'] ?? '';
         $mutationsTried = (int)($input['mutationsTried'] ?? 1);
         $totalCycles = (int)($input['totalCycles'] ?? 1);
+        $selectorMode = (string)($input['selector_mode'] ?? 'learning');
+        if (!in_array($selectorMode, ['learning', 'rule', 'random'], true)) {
+            $selectorMode = 'learning';
+        }
 
         $nowIso = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
         $timestamp = time();
@@ -716,16 +772,21 @@ final class SolidifyEngine
         // Note: We continue even with violations to collect complete failure info
         // and build proper event with failure_reason for lesson extraction
 
-        // 验证 gene validation commands
+        // D2: 分层验证 — 支持 { level, cmd } 或 string，按 level 顺序执行，遇败即停
         $validationResults = [];
         $validationOk = true;
         if ($gene !== null && !empty($gene['validation']) && !$dryRun) {
-            foreach ($gene['validation'] as $cmd) {
-                $validationResult = $this->runValidationCommand((string)$cmd);
+            $steps = self::normalizeValidationSteps($gene['validation']);
+            foreach ($steps as $step) {
+                $cmd = $step['cmd'];
+                $validationResult = $this->runValidationCommand($cmd);
+                $validationResult['cmd'] = $cmd;
+                $validationResult['level'] = $step['level'];
                 $validationResults[] = $validationResult;
                 if (!$validationResult['ok']) {
                     $validationOk = false;
-                    $warnings[] = "Validation failed: {$cmd} - " . $validationResult['err'];
+                    $warnings[] = "Validation failed (level {$step['level']}): {$cmd} - " . $validationResult['err'];
+                    break;
                 }
             }
         }
@@ -743,6 +804,23 @@ final class SolidifyEngine
         // Determine overall success
         $success = empty($violations) && $validationOk && ($canaryResult['ok'] || $canaryResult['skipped']);
 
+        // B1: Build evidence for outcome (source = solidify)
+        $evidence = [];
+        foreach ($validationResults as $vr) {
+            $cmd = $vr['cmd'] ?? 'validation';
+            $evidence[] = ($vr['ok'] ?? false) ? "validation:{$cmd}:ok" : "validation:{$cmd}:fail";
+        }
+        if ($canaryResult['skipped'] ?? true) {
+            $evidence[] = 'canary:skipped';
+        } else {
+            $evidence[] = ($canaryResult['ok'] ?? false) ? 'canary:ok' : 'canary:fail';
+        }
+        if (!empty($violations)) {
+            $evidence[] = 'violations:' . implode(';', array_slice($violations, 0, 5));
+        } else {
+            $evidence[] = 'violations:[]';
+        }
+
         // 构建event ID
         $parentEventId = $this->store->getLastEventId();
         $eventId = "evt_{$timestamp}_{$randomSuffix}";
@@ -757,6 +835,40 @@ final class SolidifyEngine
         $outcomeStatus = $success ? 'success' : 'failed';
         $outcomeScore = $success ? 0.85 : 0.2;
 
+        // B1.5: Attribution (causal attribution fields)
+        $validationScope = $gene !== null && !empty($gene['validation'])
+            ? $gene['validation']
+            : [];
+        $attribution = [
+            'decision_source' => $input['decision_source'] ?? 'gene_selected',
+            'primary_cause' => $input['primary_cause'] ?? ($success ? 'gene_strategy' : 'constraint_or_validation_failure'),
+            'contributing_factors' => $input['contributing_factors'] ?? [],
+            'human_intervention' => (bool)($input['human_intervention'] ?? false),
+            'validation_scope' => $validationScope,
+        ];
+
+        // B1.6: Cost function (edit, validation, risk, human, total)
+        $filesCountForCost = (int)($blastRadius['files'] ?? 0);
+        $linesCountForCost = (int)($blastRadius['lines'] ?? 0);
+        $editCost = $filesCountForCost * 1 + $linesCountForCost * 0.01;
+        $validationCost = count($validationResults) * 2.0;
+        $riskCost = 0.0;
+        foreach ($violations as $v) {
+            if (str_contains($v, 'critical_path') || str_contains($v, 'CRITICAL_') || str_contains($v, 'forbidden_path')) {
+                $riskCost += 10.0;
+            }
+        }
+        $manualInterventionCount = (int)($input['manual_intervention_count'] ?? 0);
+        $humanCost = $manualInterventionCount * 5.0;
+        $totalCost = $editCost + $validationCost + $riskCost + $humanCost;
+        $cost = [
+            'edit_cost' => round($editCost, 4),
+            'validation_cost' => round($validationCost, 4),
+            'risk_cost' => round($riskCost, 4),
+            'human_cost' => round($humanCost, 4),
+            'total_cost' => round($totalCost, 4),
+        ];
+
         // Apply epigenetic marks to gene
         if (!$dryRun && $gene !== null && ($gene['type'] ?? '') === 'Gene') {
             $gene = self::applyEpigeneticMarks($gene, $envFingerprint, $outcomeStatus);
@@ -768,7 +880,7 @@ final class SolidifyEngine
             $successStreak = $this->store->computeSuccessStreak($geneId, $signals);
         }
 
-        // 构建evolution event with GEP 1.6.0 fields
+        // 构建evolution event with GEP 1.6.0 + outcome source/evidence + attribution + cost
         $evolutionEvent = array_merge($event ?? [], [
             'type' => 'EvolutionEvent',
             'schema_version' => ContentHash::SCHEMA_VERSION,
@@ -780,17 +892,23 @@ final class SolidifyEngine
             'genes_used' => $geneId ? [$geneId] : [],
             'mutation_id' => $mutationId,
             'personality_state' => $personalityState ?? [
-                'rigor' => 0.8, 
-                'creativity' => 0.3, 
-                'verbosity' => 0.5, 
-                'risk_tolerance' => 0.2, 
+                'rigor' => 0.8,
+                'creativity' => 0.3,
+                'verbosity' => 0.5,
+                'risk_tolerance' => 0.2,
                 'obedience' => 0.9
             ],
             'blast_radius' => $blastRadius,
             'outcome' => [
                 'status' => $outcomeStatus,
                 'score' => $outcomeScore,
+                'source' => 'solidify',
+                'evidence' => $evidence,
             ],
+            'attribution' => $attribution,
+            'cost' => $cost,
+            'selector_mode' => $selectorMode,
+            'control_variables' => self::buildControlVariables($gene, $blastRadius),
             'env_fingerprint' => $envFingerprint,
             'mutations_tried' => $mutationsTried,
             'total_cycles' => $totalCycles,
@@ -812,15 +930,20 @@ final class SolidifyEngine
             ]);
         }
 
-        // 构建capsule (on success) with GEP 1.6.0 fields
+        // 构建capsule (on success only) — B2: outcome 以 Event 为准，来源标记 solidify_derived
         $capsuleToStore = null;
         if ($success && ($capsule !== null || (empty($warnings) && $intent !== 'repair'))) {
             $capsuleData = $capsule ?? [];
-            $capsuleOutcome = $capsuleData['outcome'] ?? [
-                'status' => empty($warnings) ? 'success' : 'partial',
-                'score' => empty($warnings) ? 0.8 : 0.5,
+            $capsuleOutcome = [
+                'status' => $outcomeStatus,
+                'score' => $outcomeScore,
+                'source' => 'solidify_derived',
+                'evidence' => $evidence,
             ];
-            
+            if (isset($capsuleData['outcome']) && is_array($capsuleData['outcome'])) {
+                $capsuleOutcome['agent_self_report'] = $capsuleData['outcome'];
+            }
+
             $capsuleToStore = array_merge($capsuleData, [
                 'type' => 'Capsule',
                 'schema_version' => ContentHash::SCHEMA_VERSION,
@@ -1240,8 +1363,8 @@ final class SolidifyEngine
         $score = 0.0;
         
         // Base score from outcome
-        $outcome评分= (float)($capsule['outcome']['score'] ?? 0.5);
-        $score += $outcome评分* 0.4;
+        $outcomeScore = (float)($capsule['outcome']['score'] ?? 0.5);
+        $score += $outcomeScore * 0.4;
         
         // Confidence factor
         $confidence = (float)($capsule['confidence'] ?? 0.5);

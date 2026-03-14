@@ -182,9 +182,9 @@ final class EvolutionLoop
      */
     private function registerSignalHandlers(): void
     {
-        if (function_exists('pcntl_signal')) {
-            pcntl_signal(SIGTERM, [$this, 'handleSignal']);
-            pcntl_signal(SIGINT, [$this, 'handleSignal']);
+        if (function_exists('pcntl_signal') && defined('SIGTERM') && defined('SIGINT')) {
+            pcntl_signal(\SIGTERM, [$this, 'handleSignal']);
+            pcntl_signal(\SIGINT, [$this, 'handleSignal']);
         }
     }
 
@@ -194,9 +194,15 @@ final class EvolutionLoop
     public function handleSignal(int $signal): void
     {
         $signalNames = [
-            SIGTERM => 'SIGTERM',
-            SIGINT => 'SIGINT',
+            15 => 'SIGTERM',
+            2 => 'SIGINT',
         ];
+        if (defined('SIGTERM')) {
+            $signalNames[\SIGTERM] = 'SIGTERM';
+        }
+        if (defined('SIGINT')) {
+            $signalNames[\SIGINT] = 'SIGINT';
+        }
         $name = $signalNames[$signal] ?? 'UNKNOWN';
         error_log('[EvolutionLoop] Received ' . $name . ', stopping gracefully');
         $this->stop();

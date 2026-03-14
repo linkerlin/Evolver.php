@@ -66,6 +66,7 @@ final class GepAssetStoreTest extends TestCase
 
     public function testLoadGenesReturnsAllGenes(): void
     {
+        $this->db->exec('DELETE FROM genes');
         $this->store->upsertGene(['id' => 'gene_1', 'category' => 'repair']);
         $this->store->upsertGene(['id' => 'gene_2', 'category' => 'optimize']);
 
@@ -321,6 +322,13 @@ final class GepAssetStoreTest extends TestCase
 
     public function testGetStatsReturnsCorrectCounts(): void
     {
+        $this->db->exec('DELETE FROM genes');
+        $this->db->exec('DELETE FROM capsules');
+        $this->db->exec('DELETE FROM events');
+        $this->db->exec('DELETE FROM failed_capsules');
+        $this->db->exec('DELETE FROM sync_status');
+        $this->db->exec('DELETE FROM run_tracker');
+
         $this->store->upsertGene(['id' => 'stats_gene', 'category' => 'repair']);
         $this->store->appendCapsule(['id' => 'stats_capsule', 'gene' => 'stats_gene']);
         $this->store->appendEvent(['id' => 'stats_event', 'intent' => 'repair']);

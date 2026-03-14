@@ -235,6 +235,7 @@ final class McpServer
                 'evolver_list_genes' => InputValidator::validateEvolverListGenes($arguments),
                 'evolver_list_capsules' => InputValidator::validateEvolverListCapsules($arguments),
                 'evolver_list_events' => InputValidator::validateEvolverListEvents($arguments),
+                'evolver_metrics' => InputValidator::validateEvolverMetrics($arguments),
                 'evolver_upsert_gene' => InputValidator::validateEvolverUpsertGene($arguments),
                 'evolver_delete_gene' => InputValidator::validateEvolverDeleteGene($arguments),
                 'evolver_stats' => [],
@@ -251,6 +252,7 @@ final class McpServer
                 'evolver_list_genes' => $this->toolEvolverListGenes($validatedArgs),
                 'evolver_list_capsules' => $this->toolEvolverListCapsules($validatedArgs),
                 'evolver_list_events' => $this->toolEvolverListEvents($validatedArgs),
+                'evolver_metrics' => $this->toolEvolverMetrics($validatedArgs),
                 'evolver_upsert_gene' => $this->toolEvolverUpsertGene($validatedArgs),
                 'evolver_delete_gene' => $this->toolEvolverDeleteGene($validatedArgs),
                 'evolver_stats' => $this->toolEvolverStats(),
@@ -373,13 +375,25 @@ final class McpServer
             $signals[] = 'harden';
         }
 
-        // 选择gene and capsule
+        $explorationRate = (float)(getenv('EVOLVER_EXPLORATION_RATE') ?: ($args['explorationRate'] ?? 0));
+        $explorationRate = max(0.0, min(1.0, $explorationRate));
+        $selectorMode = (string)(getenv('EVOLVER_SELECTOR_MODE') ?: ($args['selector_mode'] ?? 'learning'));
+        if (!in_array($selectorMode, ['learning', 'rule', 'random'], true)) {
+            $selectorMode = 'learning';
+        }
+        $useHierarchicalBayes = (bool)(getenv('EVOLVER_USE_HIERARCHICAL_BAYES') ?: ($args['useHierarchicalBayes'] ?? false));
+
+        // 选择gene and capsule（C + F1 基线：learning / rule / random）
         $selection = $this->geneSelector->selectGeneAndCapsule([
             'genes' => $genes,
             'capsules' => $capsules,
             'signals' => $signals,
             'failedCapsules' => $failedCapsules,
             'driftEnabled' => $driftEnabled,
+            'recentEvents' => $selectorMode === 'rule' ? [] : $recentEvents,
+            'explorationRate' => $selectorMode === 'learning' ? $explorationRate : 0,
+            'selector_mode' => $selectorMode,
+            'useHierarchicalBayes' => $useHierarchicalBayes,
         ]);
 
         $selectedGene = $selection['selectedGene'];
@@ -417,11 +431,17 @@ final class McpServer
             ]);
         }
 
+        // D1: 记录本次 run，供闭环覆盖率统计；客户端应在 solidify 时传入此 run_id
+        $runId = 'run_' . time() . '_' . bin2hex(random_bytes(4));
+        $this->store->recordRun($runId);
+
         return [
             'ok' => true,
+            'run_id' => $runId,
             'signals' => $signals,
             'selectedGene' => $selectedGene ? ['id' => $selectedGene['id'], 'category' => $selectedGene['category'], 'asset_id' => $selectedGene['asset_id'] ?? null] : null,
             'selector' => $selector,
+            'selector_mode' => $selection['selector_mode'] ?? 'learning',
             'prompt' => $prompt,
             'reusePrompt' => $reusePrompt,
             'safety_mode' => $this->safetyController->getMode(),
@@ -521,6 +541,14 @@ final class McpServer
             }
         }
 
+        $blastRadiusInput = $blastRadius;
+        if (!empty($files) && !isset($blastRadiusInput['changed_files'])) {
+            $blastRadiusInput['changed_files'] = $files;
+        }
+        if (!empty($args['run_id'])) {
+            $this->store->markRunSolidified((string)$args['run_id']);
+        }
+
         $result = $this->solidifyEngine->solidify([
             'intent' => $intent,
             'summary' => $summary,
@@ -530,10 +558,20 @@ final class McpServer
             'event' => $eventData,
             'mutation' => $mutationData,
             'personalityState' => $personalityState,
-            'blastRadius' => $blastRadius,
+            'blastRadius' => $blastRadiusInput,
             'dryRun' => $dryRun,
             'mutationsTried' => $args['mutationsTried'] ?? 1,
             'totalCycles' => $args['totalCycles'] ?? 1,
+            'context' => $args['context'] ?? '',
+            'baselineUntracked' => $args['baselineUntracked'] ?? [],
+            'decision_source' => $args['decision_source'] ?? null,
+            'primary_cause' => $args['primary_cause'] ?? null,
+            'contributing_factors' => $args['contributing_factors'] ?? null,
+            'human_intervention' => $args['human_intervention'] ?? null,
+            'validation_scope' => $args['validation_scope'] ?? null,
+            'manual_intervention_count' => $args['manual_intervention_count'] ?? null,
+            'selector_mode' => $args['selector_mode'] ?? null,
+            'run_id' => $args['run_id'] ?? null,
         ]);
 
         // Record cycle in lifecycle manager
@@ -609,6 +647,22 @@ final class McpServer
             'ok' => true,
             'events' => $events,
             'count' => count($events),
+        ];
+    }
+
+    /**
+     * E1 后馈演化核心指标：闭环覆盖率、可复现成功率、回归率、平均修复步数、
+     * 爆炸半径 P50/P90、平均/P90 总代价、单位代价成功率、归因清晰率 + 周报文本。
+     */
+    private function toolEvolverMetrics(array $args): array
+    {
+        $limit = (int)($args['limit'] ?? 50);
+        $events = $this->store->loadRecentEvents($limit);
+        $runClosureStats = $this->store->getRunClosureStats($limit);
+        $metrics = FeedbackMetrics::compute($events, $runClosureStats);
+        return [
+            'ok' => true,
+            'metrics' => $metrics,
         ];
     }
 
@@ -1074,9 +1128,24 @@ final class McpServer
                             'description' => 'Enable stochastic gene selection (genetic drift) for exploration',
                             'default' => false,
                         ],
+                        'explorationRate' => [
+                            'type' => 'number',
+                            'description' => 'Probability [0-1] to select a non-top gene for exploration (C2). Overridden by EVOLVER_EXPLORATION_RATE.',
+                            'default' => 0,
+                        ],
                         'cycleId' => [
                             'type' => ['string', 'null'],
                             'description' => 'Optional cycle identifier for tracking',
+                        ],
+                        'selector_mode' => [
+                            'type' => 'string',
+                            'description' => 'F1/E2: learning (default) / rule / random for baseline comparison',
+                            'default' => 'learning',
+                        ],
+                        'useHierarchicalBayes' => [
+                            'type' => 'boolean',
+                            'description' => 'E2.3: Use hierarchical Bayesian success rate (by category)',
+                            'default' => false,
                         ],
                     ],
                     'required' => [],
@@ -1131,6 +1200,35 @@ final class McpServer
                             'type' => 'boolean',
                             'description' => 'If true, validate but do not write to database',
                             'default' => false,
+                        ],
+                        'decision_source' => [
+                            'type' => 'string',
+                            'description' => 'Causal attribution: who decided (gene_selected, human_override, capsule_replay, manual_patch)',
+                        ],
+                        'primary_cause' => [
+                            'type' => 'string',
+                            'description' => 'Primary cause of success/failure (e.g. gene_strategy, constraint_or_validation_failure)',
+                        ],
+                        'contributing_factors' => [
+                            'type' => 'array',
+                            'items' => ['type' => 'string'],
+                            'description' => 'Contributing factors (e.g. better_validation_scope, smaller_blast_radius)',
+                        ],
+                        'human_intervention' => [
+                            'type' => 'boolean',
+                            'description' => 'Whether human intervened in this cycle',
+                        ],
+                        'manual_intervention_count' => [
+                            'type' => 'integer',
+                            'description' => 'Number of manual interventions (for cost calculation)',
+                        ],
+                        'selector_mode' => [
+                            'type' => 'string',
+                            'description' => 'E2: learning / rule / random (from evolver_run response, for A/B)',
+                        ],
+                        'run_id' => [
+                            'type' => 'string',
+                            'description' => 'D1: run_id from evolver_run to mark cycle closed for closure rate',
                         ],
                     ],
                     'required' => ['intent', 'summary'],
@@ -1199,6 +1297,21 @@ final class McpServer
                             'type' => 'integer',
                             'description' => 'Maximum number of events to return',
                             'default' => 20,
+                        ],
+                    ],
+                    'required' => [],
+                ],
+            ],
+            [
+                'name' => 'evolver_metrics',
+                'description' => '📈 后馈演化核心指标（E1）：闭环覆盖率、可复现成功率、回归率、平均修复步数、爆炸半径、代价、归因清晰率及周报文本。',
+                'inputSchema' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'limit' => [
+                            'type' => 'integer',
+                            'description' => 'Number of recent events to include (default 50, max 500)',
+                            'default' => 50,
                         ],
                     ],
                     'required' => [],

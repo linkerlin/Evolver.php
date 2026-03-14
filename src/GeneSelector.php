@@ -97,6 +97,8 @@ final class GeneSelector
 
     /**
      * 选择the best-matching gene from the pool.
+     * C1: 若提供 recentEvents，按 signal→gene 历史 outcome 做拉普拉斯平滑后加权。
+     * C2: explorationRate > 0 时以该概率从次优 gene 中探索。
      */
     public function selectGene(array $genes, array $signals, array $opts = []): array
     {
@@ -106,6 +108,11 @@ final class GeneSelector
         }
         $driftEnabled = (bool)($opts['driftEnabled'] ?? false);
         $preferredGeneId = $opts['preferredGeneId'] ?? null;
+        $recentEvents = $opts['recentEvents'] ?? [];
+        $explorationRate = (float)($opts['explorationRate'] ?? 0.0);
+        $explorationRate = max(0.0, min(1.0, $explorationRate));
+        $selectorMode = $opts['selector_mode'] ?? 'learning';
+        $useHierarchicalBayes = (bool)($opts['useHierarchicalBayes'] ?? false);
 
         $driftIntensity = $this->computeDriftIntensity([
             'driftEnabled' => $driftEnabled,
@@ -117,6 +124,13 @@ final class GeneSelector
         $distilledPrefix = 'gene_distilled_';
         $distilledFactor = 0.8;
 
+        $geneSuccessRate = [];
+        if ($selectorMode === 'learning' && !empty($recentEvents)) {
+            $geneSuccessRate = $useHierarchicalBayes
+                ? $this->computeGeneSuccessRateHierarchical($signals, $recentEvents, $genes)
+                : $this->computeGeneSuccessRateFromEvents($signals, $recentEvents);
+        }
+
         // 评分all genes
         $scored = [];
         foreach ($genes as $gene) {
@@ -124,6 +138,10 @@ final class GeneSelector
             if ($score > 0) {
                 if (isset($gene['id']) && str_starts_with((string)$gene['id'], $distilledPrefix)) {
                     $score *= $distilledFactor;
+                }
+                $geneId = $gene['id'] ?? null;
+                if ($geneId !== null && isset($geneSuccessRate[$geneId])) {
+                    $score *= (0.4 + 0.6 * $geneSuccessRate[$geneId]);
                 }
                 $scored[] = ['gene' => $gene, 'score' => $score];
             }
@@ -176,12 +194,20 @@ final class GeneSelector
             ];
         }
 
-        // Stochastic selection under drift
-        $selectedIdx = 0;
-        if ($driftIntensity > 0 && count($filtered) > 1 && (mt_rand() / mt_getrandmax()) < $driftIntensity) {
-            $topN = max(2, (int)ceil(count($filtered) * $driftIntensity));
-            $topN = min($topN, count($filtered));
-            $selectedIdx = mt_rand(0, $topN - 1);
+        // F1 随机基线：在安全约束内随机选 gene
+        if ($selectorMode === 'random' && count($filtered) > 1) {
+            $selectedIdx = mt_rand(0, count($filtered) - 1);
+        } else {
+            $selectedIdx = 0;
+            if ($driftIntensity > 0 && count($filtered) > 1 && (mt_rand() / mt_getrandmax()) < $driftIntensity) {
+                $topN = max(2, (int)ceil(count($filtered) * $driftIntensity));
+                $topN = min($topN, count($filtered));
+                $selectedIdx = mt_rand(0, $topN - 1);
+            }
+            if ($selectorMode === 'learning' && $explorationRate > 0 && count($filtered) > 1 && (mt_rand() / mt_getrandmax()) < $explorationRate) {
+                $exploreTop = min(3, count($filtered));
+                $selectedIdx = $exploreTop > 1 ? mt_rand(1, $exploreTop - 1) : 0;
+            }
         }
 
         $alternatives = [];
@@ -196,6 +222,137 @@ final class GeneSelector
             'alternatives' => array_slice($alternatives, 0, 4),
             'driftIntensity' => $driftIntensity,
         ];
+    }
+
+    /**
+     * C1: 从近期事件计算每个 gene 在「与当前 signals 相似」情境下的拉普拉斯平滑成功率。
+     *
+     * @param array<string> $signals
+     * @param array<int, array<string, mixed>> $recentEvents
+     * @return array<string, float> geneId => success rate in [0,1]
+     */
+    private function computeGeneSuccessRateFromEvents(array $signals, array $recentEvents): array
+    {
+        if (empty($recentEvents)) {
+            return [];
+        }
+        $currentKey = $this->signalKeyForHistory($signals);
+        $geneSuccess = [];
+        $geneFail = [];
+        foreach ($recentEvents as $ev) {
+            $outcome = $ev['outcome'] ?? [];
+            $source = $outcome['source'] ?? null;
+            if ($source !== 'solidify') {
+                continue;
+            }
+            $status = $outcome['status'] ?? 'unknown';
+            $evSignals = $ev['signals'] ?? [];
+            $evKey = $this->signalKeyForHistory($evSignals);
+            if ($evKey === '' || $currentKey === '' || $this->signalOverlapForHistory($currentKey, $evKey) < 0.3) {
+                continue;
+            }
+            $genesUsed = $ev['genes_used'] ?? [];
+            foreach ($genesUsed as $gid) {
+                $gid = (string)$gid;
+                if ($status === 'success') {
+                    $geneSuccess[$gid] = ($geneSuccess[$gid] ?? 0) + 1;
+                } else {
+                    $geneFail[$gid] = ($geneFail[$gid] ?? 0) + 1;
+                }
+            }
+        }
+        $rates = [];
+        $allGeneIds = array_keys($geneSuccess + $geneFail);
+        foreach ($allGeneIds as $gid) {
+            $s = $geneSuccess[$gid] ?? 0;
+            $f = $geneFail[$gid] ?? 0;
+            $rates[$gid] = ($s + 1) / ($s + $f + 2);
+        }
+        return $rates;
+    }
+
+    private function signalKeyForHistory(array $signals): string
+    {
+        $s = array_map('strval', $signals);
+        sort($s);
+        return implode('|', array_slice($s, 0, 5));
+    }
+
+    private function signalOverlapForHistory(string $keyA, string $keyB): float
+    {
+        if ($keyA === '' || $keyB === '') {
+            return 0.0;
+        }
+        $setA = array_flip(explode('|', $keyA));
+        $setB = explode('|', $keyB);
+        $hits = 0;
+        foreach ($setB as $b) {
+            if (isset($setA[$b])) {
+                $hits++;
+            }
+        }
+        return $hits / max(count($setB), 1);
+    }
+
+    /**
+     * E2.3 层级贝叶斯：按 category 建 Beta 先验，再算每个 gene 的后验成功率。
+     *
+     * @param array<string> $signals
+     * @param array<int, array<string, mixed>> $recentEvents
+     * @param array<int, array<string, mixed>> $genes
+     * @return array<string, float> geneId => success rate
+     */
+    private function computeGeneSuccessRateHierarchical(array $signals, array $recentEvents, array $genes): array
+    {
+        if (empty($recentEvents)) {
+            return [];
+        }
+        $currentKey = $this->signalKeyForHistory($signals);
+        $categorySuccess = [];
+        $categoryFail = [];
+        $geneSuccess = [];
+        $geneFail = [];
+        $geneToCategory = [];
+        foreach ($genes as $g) {
+            $gid = $g['id'] ?? null;
+            if ($gid !== null) {
+                $geneToCategory[(string)$gid] = $g['category'] ?? 'repair';
+            }
+        }
+        foreach ($recentEvents as $ev) {
+            $outcome = $ev['outcome'] ?? [];
+            if (($outcome['source'] ?? null) !== 'solidify') {
+                continue;
+            }
+            $status = $outcome['status'] ?? 'unknown';
+            $evKey = $this->signalKeyForHistory($ev['signals'] ?? []);
+            if ($evKey === '' || $currentKey === '' || $this->signalOverlapForHistory($currentKey, $evKey) < 0.3) {
+                continue;
+            }
+            foreach ($ev['genes_used'] ?? [] as $gid) {
+                $gid = (string)$gid;
+                $cat = $geneToCategory[$gid] ?? 'repair';
+                if ($status === 'success') {
+                    $geneSuccess[$gid] = ($geneSuccess[$gid] ?? 0) + 1;
+                    $categorySuccess[$cat] = ($categorySuccess[$cat] ?? 0) + 1;
+                } else {
+                    $geneFail[$gid] = ($geneFail[$gid] ?? 0) + 1;
+                    $categoryFail[$cat] = ($categoryFail[$cat] ?? 0) + 1;
+                }
+            }
+        }
+        $rates = [];
+        foreach (array_keys($geneSuccess + $geneFail) as $gid) {
+            $cat = $geneToCategory[$gid] ?? 'repair';
+            $catS = $categorySuccess[$cat] ?? 0;
+            $catF = $categoryFail[$cat] ?? 0;
+            $alpha = $catS + 1;
+            $beta = $catF + 1;
+            $s = $geneSuccess[$gid] ?? 0;
+            $f = $geneFail[$gid] ?? 0;
+            $rates[$gid] = ($alpha + $s) / ($alpha + $beta + $s + $f);
+        }
+        return $rates;
     }
 
     /**
@@ -290,10 +447,15 @@ final class GeneSelector
 
         $effectiveBans = $this->banGenesFromFailedCapsules($failedCapsules, $signals, $bannedGeneIds);
 
+        $selectorMode = $input['selector_mode'] ?? 'learning';
         $geneResult = $this->selectGene($genes, $signals, [
             'bannedGeneIds' => $effectiveBans,
             'preferredGeneId' => $preferredGeneId,
             'driftEnabled' => $driftEnabled,
+            'recentEvents' => $input['recentEvents'] ?? [],
+            'explorationRate' => $input['explorationRate'] ?? 0.0,
+            'selector_mode' => $selectorMode,
+            'useHierarchicalBayes' => $input['useHierarchicalBayes'] ?? false,
         ]);
 
         $selectedCapsule = $this->selectCapsule($capsules, $signals);
@@ -313,6 +475,7 @@ final class GeneSelector
             'capsuleCandidates' => $selectedCapsule ? [$selectedCapsule] : [],
             'selector' => $selector,
             'driftIntensity' => $geneResult['driftIntensity'],
+            'selector_mode' => $selectorMode,
         ];
     }
 

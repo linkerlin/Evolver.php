@@ -306,4 +306,19 @@ final class SolidifyEngineTest extends TestCase
         // Should have antiPatternPublishResult key (even if null due to disabled env)
         $this->assertArrayHasKey('antiPatternPublishResult', $result);
     }
+
+    public function testNormalizeValidationStepsSortsByLevel(): void
+    {
+        $validation = [
+            ['level' => 1, 'cmd' => 'composer test'],
+            ['level' => 0, 'cmd' => 'php -l src/*.php'],
+            'php -l foo.php',
+        ];
+        $steps = SolidifyEngine::normalizeValidationSteps($validation);
+        $this->assertCount(3, $steps);
+        $this->assertSame(0, $steps[0]['level']);
+        $this->assertSame('php -l src/*.php', $steps[0]['cmd']);
+        $this->assertSame(1, $steps[1]['level']);
+        $this->assertSame(1, $steps[2]['level']);
+    }
 }

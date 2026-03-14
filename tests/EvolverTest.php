@@ -462,8 +462,13 @@ class EvolverTest extends TestCase
 
     public function testSolidifyWritesToStore(): void
     {
-        $genes = $this->store->loadGenes();
-        $gene = $genes[0];
+        $gene = [
+            'id' => 'gene_no_validation_test',
+            'type' => 'Gene',
+            'category' => 'repair',
+            'signals_match' => ['log_error'],
+            'constraints' => ['max_files' => 10, 'forbidden_paths' => []],
+        ];
 
         $result = $this->solidifyEngine->solidify([
             'intent' => 'repair',
@@ -678,12 +683,18 @@ class EvolverTest extends TestCase
 
     public function testSolidifyEventContainsEnvFingerprint(): void
     {
-        $genes = $this->store->loadGenes();
+        $gene = [
+            'id' => 'gene_fp_test',
+            'type' => 'Gene',
+            'category' => 'repair',
+            'signals_match' => ['log_error'],
+            'constraints' => ['max_files' => 10, 'forbidden_paths' => []],
+        ];
         $result = $this->solidifyEngine->solidify([
             'intent' => 'repair',
             'summary' => 'Test with fingerprint',
             'signals' => ['log_error'],
-            'gene' => $genes[0],
+            'gene' => $gene,
             'blastRadius' => ['files' => 1, 'lines' => 3],
             'dryRun' => false,
         ]);
@@ -703,26 +714,32 @@ class EvolverTest extends TestCase
     /** Run a JSON-RPC sequence through the MCP server and collect responses. */
     private function runMcpSequence(array $messages, string $dbPath = ':memory:'): array
     {
-        // 写入临时文件 to pipe into the server
         $input = '';
         foreach ($messages as $msg) {
             $input .= json_encode($msg) . "\n";
         }
+        $php = defined('PHP_BINARY') ? PHP_BINARY : 'php';
+        $script = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'evolver.php';
+        $cmd = sprintf('%s %s --db %s', $php, escapeshellarg($script), escapeshellarg($dbPath));
 
-        $tmpIn  = tempnam(sys_get_temp_dir(), 'mcp_in_');
-        $tmpOut = tempnam(sys_get_temp_dir(), 'mcp_out_');
-        file_put_contents($tmpIn, $input);
-
-        $php = PHP_BINARY;
-        $script = dirname(__DIR__) . '/evolver.php';
-        shell_exec("{$php} {$script} --db " . escapeshellarg($dbPath) . " < " . escapeshellarg($tmpIn) . " > " . escapeshellarg($tmpOut) . " 2>/dev/null");
-
-        $raw = file_get_contents($tmpOut);
-        unlink($tmpIn);
-        unlink($tmpOut);
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+        $proc = proc_open($cmd, $descriptors, $pipes, dirname(__DIR__), null);
+        if (!is_resource($proc)) {
+            return [];
+        }
+        fwrite($pipes[0], $input);
+        fclose($pipes[0]);
+        $raw = stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        proc_close($proc);
 
         $responses = [];
-        foreach (explode("\n", trim($raw)) as $line) {
+        foreach (explode("\n", trim($raw ?? '')) as $line) {
             $line = trim($line);
             if ($line !== '') {
                 $decoded = json_decode($line, true);
@@ -912,11 +929,98 @@ class EvolverTest extends TestCase
         $expectedTools = [
             'evolver_run', 'evolver_solidify', 'evolver_extract_signals',
             'evolver_list_genes', 'evolver_list_capsules', 'evolver_list_events',
-            'evolver_upsert_gene', 'evolver_delete_gene', 'evolver_stats',
+            'evolver_metrics', 'evolver_upsert_gene', 'evolver_delete_gene', 'evolver_stats',
         ];
         foreach ($expectedTools as $expected) {
             $this->assertContains($expected, $toolNames, "Missing tool: {$expected}");
         }
+    }
+
+    /** 集成测试：通过 MCP 调用 evolver_metrics，空库时返回 ok 与空指标。 */
+    public function testMcpToolEvolverMetricsEmpty(): void
+    {
+        $dbPath = tempnam(sys_get_temp_dir(), 'gep_metrics_') . '.db';
+        $responses = $this->runMcpSequence([
+            ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2024-11-05', 'capabilities' => new \stdClass()]],
+            ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => ['name' => 'evolver_metrics', 'arguments' => ['limit' => 10]]],
+        ], $dbPath);
+        @unlink($dbPath);
+        @unlink($dbPath . '-wal');
+        @unlink($dbPath . '-shm');
+
+        $callResp = null;
+        foreach ($responses as $r) {
+            if (($r['id'] ?? null) === 2) {
+                $callResp = $r;
+                break;
+            }
+        }
+        $this->assertNotNull($callResp, 'Expected tools/call response');
+        $this->assertArrayHasKey('result', $callResp);
+        $content = $callResp['result']['content'] ?? [];
+        $this->assertNotEmpty($content);
+        $payload = json_decode($content[0]['text'] ?? '', true);
+        $this->assertIsArray($payload);
+        $this->assertTrue($payload['ok'] ?? false, 'evolver_metrics should return ok true');
+        $metrics = $payload['metrics'] ?? [];
+        $this->assertSame(0, $metrics['event_count']);
+        $this->assertArrayHasKey('report', $metrics);
+        $this->assertStringContainsString('无近期事件', $metrics['report']);
+        $this->assertArrayHasKey('closure_coverage', $metrics);
+        $this->assertArrayHasKey('reproducible_success_rate', $metrics);
+    }
+
+    /** 集成测试：写入若干事件后通过 MCP 调用 evolver_metrics，断言指标形状与数值。 */
+    public function testMcpToolEvolverMetricsWithEvents(): void
+    {
+        $dbPath = tempnam(sys_get_temp_dir(), 'gep_metrics_') . '.db';
+        $db = new Database($dbPath);
+        $store = new GepAssetStore($db);
+
+        $store->appendEvent([
+            'outcome' => ['status' => 'success', 'score' => 0.9, 'source' => 'solidify'],
+            'cost' => ['total_cost' => 5.0],
+            'blast_radius' => ['files' => 2, 'lines' => 20],
+            'attribution' => ['decision_source' => 'gene_selected', 'primary_cause' => 'gene_strategy'],
+            'signals' => ['log_error'],
+            'selector_mode' => 'learning',
+        ]);
+        $store->appendEvent([
+            'outcome' => ['status' => 'failed', 'score' => 0.2, 'source' => 'solidify'],
+            'cost' => ['total_cost' => 10.0],
+            'blast_radius' => ['files' => 5, 'lines' => 50],
+            'attribution' => [],
+            'signals' => ['error'],
+            'selector_mode' => 'rule',
+        ]);
+        unset($store, $db);
+
+        $responses = $this->runMcpSequence([
+            ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2024-11-05', 'capabilities' => new \stdClass()]],
+            ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => ['name' => 'evolver_metrics', 'arguments' => ['limit' => 50]]],
+        ], $dbPath);
+        @unlink($dbPath);
+        @unlink($dbPath . '-wal');
+        @unlink($dbPath . '-shm');
+
+        $callResp = null;
+        foreach ($responses as $r) {
+            if (($r['id'] ?? null) === 2) {
+                $callResp = $r;
+                break;
+            }
+        }
+        $this->assertNotNull($callResp);
+        $payload = json_decode($callResp['result']['content'][0]['text'], true);
+        $this->assertTrue($payload['ok'] ?? false);
+        $metrics = $payload['metrics'] ?? [];
+        $this->assertSame(2, $metrics['event_count']);
+        $this->assertEqualsWithDelta(1.0, (float) $metrics['closure_coverage'], 0.001, 'closure_coverage');
+        $this->assertEqualsWithDelta(0.5, (float) $metrics['reproducible_success_rate'], 0.001, 'reproducible_success_rate');
+        $this->assertStringContainsString('闭环覆盖率', $metrics['report']);
+        $this->assertArrayHasKey('counterfactual', $metrics);
+        $this->assertArrayHasKey('by_mode', $metrics['counterfactual']);
+        $this->assertGreaterThan(0, $metrics['avg_total_cost']);
     }
 
     // -------------------------------------------------------------------------
@@ -1164,12 +1268,15 @@ class EvolverTest extends TestCase
         $this->assertNotEmpty($prompt);
         $this->assertStringContainsString('GEP', $prompt);
 
-        // 4. Solidify
+        // 4. Solidify（使用无 validation 的 gene 副本，避免测试环境执行验证命令失败）
+        $geneForSolidify = $selection['selectedGene'];
+        $geneForSolidify['validation'] = [];
+
         $result = $this->solidifyEngine->solidify([
             'intent' => 'repair',
             'summary' => 'Fixed the module error',
             'signals' => $signals,
-            'gene' => $selection['selectedGene'],
+            'gene' => $geneForSolidify,
             'blastRadius' => ['files' => 1, 'lines' => 5],
         ]);
         $this->assertTrue($result['ok']);
@@ -2123,9 +2230,8 @@ class EvolverTest extends TestCase
     public function testEvolutionLoopHandleSignal(): void
     {
         $loop = new \Evolver\EvolutionLoop($this->db, 60);
-        
-        $loop->handleSignal(SIGTERM);
-        
+        $sigTerm = defined('SIGTERM') ? SIGTERM : 15;
+        $loop->handleSignal($sigTerm);
         $this->assertFalse($loop->isRunning());
     }
 
@@ -2452,9 +2558,8 @@ class EvolverTest extends TestCase
     public function testLifecycleManagerHandleSignal(): void
     {
         $manager = new \Evolver\Ops\LifecycleManager();
-        
-        $manager->handleSignal(SIGTERM);
-        
+        $sigTerm = defined('SIGTERM') ? SIGTERM : 15;
+        $manager->handleSignal($sigTerm);
         $this->assertTrue($manager->isShuttingDown());
     }
 
@@ -2783,14 +2888,13 @@ class EvolverTest extends TestCase
     public function testGeneSelectorSelectCapsule(): void
     {
         $selector = new \Evolver\GeneSelector();
-        
         $capsules = [
-            ['outcome' => ['score' => 0.9], 'confidence' => 0.9],
+            ['trigger' => ['error'], 'outcome' => ['score' => 0.9], 'confidence' => 0.9],
         ];
-        
         $result = $selector->selectCapsule($capsules, ['error']);
-        
         $this->assertIsArray($result);
+        $this->assertArrayHasKey('trigger', $result);
+        $this->assertContains('error', $result['trigger']);
     }
 
     public function testGeneSelectorBanGenes(): void

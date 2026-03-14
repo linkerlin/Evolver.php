@@ -100,6 +100,17 @@ php evolver.php --validate
 
 首次运行时会自动创建目录和数据库文件。
 
+## 后馈闭环流程（标准工作流）
+
+为保证每次演化都有**可复现的后馈**，请严格按以下顺序执行：
+
+1. **evolver_run** — 根据 signals 选 Gene/Capsule，生成 GEP 提示
+2. **执行 Mutation** — 人类或代理按提示真实修改代码/配置
+3. **运行 validation** — 执行 Gene 中声明的验证命令（如 `composer test`、`php -l`）
+4. **evolver_solidify** — 固化结果：引擎根据 violations + 验证结果 + canary 计算 outcome，写入 EvolutionEvent（成功与失败都会记录）
+
+每次演化结束都应调用 `evolver_solidify`，并传入本次 `evolver_run` 返回的 **run_id** 与 **selector_mode**，这样数据库里才会有带 `outcome.status` 的 EvolutionEvent，且 **run→solidify 闭环覆盖率**（D1）与 **反事实/ A/B 按 mode 分组**（F2/E2）才可统计。默认 Genes 已配置至少一条 validation；若自建 Gene，可配置分层验证（Level 0/1/2），遇败即停（见方案 D2）。
+
 ## 可用 MCP 工具
 
 | 工具 | 说明 |
@@ -110,6 +121,7 @@ php evolver.php --validate
 | `evolver_list_genes` | 列出可用 Genes（支持按分类筛选）|
 | `evolver_list_capsules` | 列出可用 Capsules |
 | `evolver_list_events` | 查看最近演化事件 |
+| `evolver_metrics` | 后馈演化核心指标与周报（闭环覆盖率、成功率、代价、归因等） |
 | `evolver_upsert_gene` | 创建或更新 Gene |
 | `evolver_delete_gene` | 删除 Gene |
 | `evolver_stats` | 获取存储统计信息 |

@@ -86,6 +86,7 @@ Evolver.php/
 
 ### Schema 版本
 - 所有类统一使用 `ContentHash::SCHEMA_VERSION`（当前为 `'1.6.0'`）
+- 数据库 Schema 版本由 `Database::SCHEMA_VERSION` 管理（当前为 `'1.7.0'`，含 `run_tracker` 表）
 - Schema 迁移由 `Database::runMigrations()` 统一管理
 - `GepAssetStore` 不执行迁移，仅负责数据操作。
 
@@ -109,7 +110,7 @@ Evolver.php/
 
 ### MCP 服务器协议
 - MCP 服务器期望通过 stdin/stdout 接收 JSON-RPC 2.0 消息
-- 工具定义在 `src/McpServer.php`（如 `evolver_run`、`evolver_solidify`）
+- 工具定义在 `src/McpServer.php`（如 `evolver_run`、`evolver_solidify`、`evolver_metrics`）
 - 当 `evolver_run` 生成 GEP 提示时，LLM 必须按顺序输出恰好 5 个 JSON 对象：
   1. `Mutation`
   2. `PersonalityState`
@@ -117,6 +118,7 @@ Evolver.php/
   4. `Gene`
   5. `Capsule`
 - 缺少任何对象都会导致协议失败。
+- **后馈闭环**：`evolver_run` 返回 `run_id` 与 `selector_mode`；建议在 `evolver_solidify` 时传入二者，以便统计 run→solidify 闭环覆盖率与反事实/A/B 分组（见 [后馈演化改进方案.md](./后馈演化改进方案.md)）。
 
 ### evolver 智能体集成
 - `.evolver/` 目录存储 evolver 递归语言模型智能体的记忆、上下文和输出
@@ -128,6 +130,9 @@ Evolver.php/
 |------|--------|------|
 | `EVOLVER_DB_PATH` | `~/.evolver/evolver.db` | SQLite 数据库文件路径 |
 | `EVOLVE_ALLOW_SELF_MODIFY` | `always` | 安全模式：`never`、`review` 或 `always` |
+| `EVOLVER_SELECTOR_MODE` | - | 选择器基线：`learning` / `rule` / `random`（A/B 与反事实） |
+| `EVOLVER_EXPLORATION_RATE` | 0 | 探索率 [0–1]，学习模式下随机选次优 gene 的概率 |
+| `EVOLVER_USE_HIERARCHICAL_BAYES` | - | 为真时使用按 category 的层级贝叶斯成功率 |
 | `A2A_HUB_URL` | - | EvoMap Hub 同步地址（可选）|
 | `A2A_NODE_SECRET` | - | 认证节点密钥（可选）|
 

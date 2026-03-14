@@ -173,9 +173,9 @@ final class LifecycleManager
      */
     private function registerSignalHandlers(): void
     {
-        if (function_exists('pcntl_signal')) {
-            pcntl_signal(SIGTERM, [$this, 'handleSignal']);
-            pcntl_signal(SIGINT, [$this, 'handleSignal']);
+        if (function_exists('pcntl_signal') && defined('SIGTERM') && defined('SIGINT')) {
+            pcntl_signal(\SIGTERM, [$this, 'handleSignal']);
+            pcntl_signal(\SIGINT, [$this, 'handleSignal']);
         }
     }
 
@@ -185,9 +185,15 @@ final class LifecycleManager
     public function handleSignal(int $signal): void
     {
         $signalNames = [
-            SIGTERM => 'SIGTERM',
-            SIGINT => 'SIGINT',
+            15 => 'SIGTERM',
+            2 => 'SIGINT',
         ];
+        if (defined('SIGTERM')) {
+            $signalNames[\SIGTERM] = 'SIGTERM';
+        }
+        if (defined('SIGINT')) {
+            $signalNames[\SIGINT] = 'SIGINT';
+        }
         $name = $signalNames[$signal] ?? 'UNKNOWN';
         $this->shutdown($name);
         exit(0);

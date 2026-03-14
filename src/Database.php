@@ -15,7 +15,7 @@ final class Database
     private array $migrationLog = [];
 
     /** Current schema version */
-    private const SCHEMA_VERSION = '1.6.0';
+    private const SCHEMA_VERSION = '1.7.0';
 
     public function __construct(string $path)
     {
@@ -174,6 +174,9 @@ final class Database
         if (version_compare($currentVersion, '1.6.0', '<')) {
             $this->migrateTo160();
         }
+        if (version_compare($currentVersion, '1.7.0', '<')) {
+            $this->migrateTo170();
+        }
 
         // 更新schema version
         $this->setSchemaVersion(self::SCHEMA_VERSION);
@@ -314,6 +317,21 @@ final class Database
 
         // 更新existing records to have proper schema version
         $this->db->exec("UPDATE genes SET schema_version = '1.6.0' WHERE schema_version IS NULL OR schema_version = '1.5.0'");
+    }
+
+    /**
+     * D1: run_tracker 表，用于统计 run→solidify 闭环覆盖率。
+     */
+    private function migrateTo170(): void
+    {
+        $this->migrationLog[] = "Running migration to 1.7.0";
+        $this->db->exec(<<<'SQL'
+            CREATE TABLE IF NOT EXISTS run_tracker (
+                run_id TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                solidified_at TEXT
+            )
+        SQL);
     }
 
     /**

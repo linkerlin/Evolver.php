@@ -36,6 +36,7 @@ final class DatabaseTest extends TestCase
         $journalMode = $this->db->fetchOne('PRAGMA journal_mode');
         $mode = strtolower($journalMode['journal_mode'] ?? '');
         $this->assertContains($mode, ['wal', 'memory', 'delete', 'truncate', 'persist']);
+
     }
 
     public function testFetchAllReturnsArray(): void

@@ -14,6 +14,9 @@ final class Database
     private string $path;
     private array $migrationLog = [];
 
+    private const DEFAULT_BUSY_TIMEOUT_MS = 15000;
+    private const MAX_LOCK_RETRIES = 4;
+
     /** Current schema version */
     private const SCHEMA_VERSION = '1.9.0';
 
@@ -137,6 +140,10 @@ final class Database
     {
         $this->db = new \SQLite3($this->path, SQLITE3_OPEN_READWRITE | SQLITE3_OPEN_CREATE);
         $this->db->enableExceptions(true);
+
+        $busyTimeoutMs = $this->resolveBusyTimeoutMs();
+        $this->db->busyTimeout($busyTimeoutMs);
+        $this->db->exec('PRAGMA busy_timeout=' . $busyTimeoutMs);
 
         // Performance and reliability settings
         $this->db->exec('PRAGMA journal_mode=WAL');
@@ -663,49 +670,53 @@ final class Database
 
     public function query(string $sql, array $params = []): \SQLite3Result|bool
     {
-        if (empty($params)) {
-            return $this->db->query($sql);
-        }
-
-        $stmt = $this->db->prepare($sql);
-        foreach ($params as $key => $value) {
-            $type = match (true) {
-                is_int($value) => SQLITE3_INTEGER,
-                is_float($value) => SQLITE3_FLOAT,
-                is_null($value) => SQLITE3_NULL,
-                default => SQLITE3_TEXT,
-            };
-            if (is_int($key)) {
-                $stmt->bindValue($key + 1, $value, $type);
-            } else {
-                $stmt->bindValue($key, $value, $type);
+        return $this->executeWithLockRetry(function () use ($sql, $params): \SQLite3Result|bool {
+            if (empty($params)) {
+                return $this->db->query($sql);
             }
-        }
-        return $stmt->execute();
+
+            $stmt = $this->db->prepare($sql);
+            foreach ($params as $key => $value) {
+                $type = match (true) {
+                    is_int($value) => SQLITE3_INTEGER,
+                    is_float($value) => SQLITE3_FLOAT,
+                    is_null($value) => SQLITE3_NULL,
+                    default => SQLITE3_TEXT,
+                };
+                if (is_int($key)) {
+                    $stmt->bindValue($key + 1, $value, $type);
+                } else {
+                    $stmt->bindValue($key, $value, $type);
+                }
+            }
+            return $stmt->execute();
+        });
     }
 
     public function exec(string $sql, array $params = []): bool
     {
-        if (empty($params)) {
-            return $this->db->exec($sql);
-        }
-
-        $stmt = $this->db->prepare($sql);
-        foreach ($params as $key => $value) {
-            $type = match (true) {
-                is_int($value) => SQLITE3_INTEGER,
-                is_float($value) => SQLITE3_FLOAT,
-                is_null($value) => SQLITE3_NULL,
-                default => SQLITE3_TEXT,
-            };
-            if (is_int($key)) {
-                $stmt->bindValue($key + 1, $value, $type);
-            } else {
-                $stmt->bindValue($key, $value, $type);
+        return $this->executeWithLockRetry(function () use ($sql, $params): bool {
+            if (empty($params)) {
+                return $this->db->exec($sql);
             }
-        }
-        $result = $stmt->execute();
-        return $result !== false;
+
+            $stmt = $this->db->prepare($sql);
+            foreach ($params as $key => $value) {
+                $type = match (true) {
+                    is_int($value) => SQLITE3_INTEGER,
+                    is_float($value) => SQLITE3_FLOAT,
+                    is_null($value) => SQLITE3_NULL,
+                    default => SQLITE3_TEXT,
+                };
+                if (is_int($key)) {
+                    $stmt->bindValue($key + 1, $value, $type);
+                } else {
+                    $stmt->bindValue($key, $value, $type);
+                }
+            }
+            $result = $stmt->execute();
+            return $result !== false;
+        });
     }
 
     public function fetchAll(string $sql, array $params = []): array
@@ -739,5 +750,52 @@ final class Database
     public function close(): void
     {
         $this->db->close();
+    }
+
+    private function resolveBusyTimeoutMs(): int
+    {
+        $raw = getenv('EVOLVER_DB_BUSY_TIMEOUT_MS');
+        if ($raw === false || $raw === '') {
+            return self::DEFAULT_BUSY_TIMEOUT_MS;
+        }
+
+        $value = (int) $raw;
+        if ($value < 100) {
+            return 100;
+        }
+        if ($value > 60000) {
+            return 60000;
+        }
+        return $value;
+    }
+
+    private function isLockContention(\Throwable $e): bool
+    {
+        $message = strtolower($e->getMessage());
+        return str_contains($message, 'database is locked')
+            || str_contains($message, 'database table is locked')
+            || str_contains($message, 'database schema is locked')
+            || str_contains($message, 'database is busy')
+            || str_contains($message, 'sqlite_busy')
+            || str_contains($message, 'sqlite_locked');
+    }
+
+    private function executeWithLockRetry(callable $operation): mixed
+    {
+        $attempt = 0;
+
+        while (true) {
+            try {
+                return $operation();
+            } catch (\Throwable $e) {
+                if (!$this->isLockContention($e) || $attempt >= self::MAX_LOCK_RETRIES) {
+                    throw $e;
+                }
+
+                $backoffUs = (50_000 * (2 ** $attempt)) + random_int(0, 10_000);
+                usleep($backoffUs);
+                $attempt++;
+            }
+        }
     }
 }

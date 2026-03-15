@@ -106,7 +106,7 @@ final class SignalExtractor
 
         // --- Recurring error detection ---
         $errorCounts = [];
-        preg_match_all('/(?:LLM error|"error"|"status":\s*"error")[^}]{0,200}/i', $corpus, $errMatches);
+        preg_match_all('/(?:LLM error|"error"|"status":\s*"error")[^}]{0,200}?/i', $corpus, $errMatches);
         foreach ($errMatches[0] as $match) {
             $key = substr(preg_replace('/\s+/', ' ', $match), 0, 100);
             $errorCounts[$key] = ($errorCounts[$key] ?? 0) + 1;
@@ -147,7 +147,7 @@ final class SignalExtractor
 
         // capability_gap
         if (!in_array('memory_missing', $signals) && !in_array('user_missing', $signals) && !in_array('session_logs_missing', $signals)) {
-            if (preg_match('/\b(not supported|cannot|doesn\'?t support|no way to|missing feature|unsupported|not available|not implemented|no support for)\b/i', $lower)) {
+            if (preg_match('/\b(not supported|cannot|doesn\'?t support|does not support|no way to|missing feature|unsupported|not available|not implemented|no support for)\b/i', $lower)) {
                 $signals[] = 'capability_gap';
             }
         }

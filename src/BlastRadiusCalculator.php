@@ -497,27 +497,36 @@ final class BlastRadiusCalculator
      */
     private function runGitCommand(string $args): array
     {
-        $cmd = 'git ' . $args;
+        $stdoutFile = tempnam(sys_get_temp_dir(), 'evolver_git_out_');
+        $stderrFile = tempnam(sys_get_temp_dir(), 'evolver_git_err_');
+
+        if ($stdoutFile === false || $stderrFile === false) {
+            return ['ok' => false, 'output' => '', 'error' => 'Failed to create temporary files'];
+        }
+
         $descriptors = [
             0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
+            1 => ['file', $stdoutFile, 'w'],
+            2 => ['file', $stderrFile, 'w'],
         ];
 
-        $process = proc_open($cmd, $descriptors, $pipes, $this->repoRoot);
+        $command = array_merge(['git'], preg_split('/\s+/', trim($args)) ?: []);
+        $process = proc_open($command, $descriptors, $pipes, $this->repoRoot);
+
         if (!is_resource($process)) {
+            @unlink($stdoutFile);
+            @unlink($stderrFile);
             return ['ok' => false, 'output' => '', 'error' => 'Failed to start git process'];
         }
 
         fclose($pipes[0]);
 
-        $stdout = stream_get_contents($pipes[1]);
-        $stderr = stream_get_contents($pipes[2]);
-
-        fclose($pipes[1]);
-        fclose($pipes[2]);
-
         $exitCode = proc_close($process);
+        $stdout = @file_get_contents($stdoutFile);
+        $stderr = @file_get_contents($stderrFile);
+
+        @unlink($stdoutFile);
+        @unlink($stderrFile);
 
         return [
             'ok' => $exitCode === 0,

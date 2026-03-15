@@ -24,7 +24,8 @@ final class EvoMapClient
 
     public function __construct(?string $hubUrl = null)
     {
-        $this->hubUrl = $hubUrl ?: $this->getHubUrlFromEnv();
+        // Only use env fallback if null is passed, not if empty string is explicitly passed
+        $this->hubUrl = $hubUrl === null ? $this->getHubUrlFromEnv() : $hubUrl;
         $this->protocol = new GepA2AProtocol();
     }
 

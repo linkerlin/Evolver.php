@@ -244,7 +244,7 @@ final class GepValidator
 
         // 检查required fields
         foreach ($requiredFields as $field) {
-            if (!isset($obj[$field])) {
+            if (!array_key_exists($field, $obj)) {
                 $result['valid'] = false;
                 $result['errors'][] = "Missing required field: {$field}";
             }

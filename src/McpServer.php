@@ -222,9 +222,6 @@ final class McpServer
 
     private function handleToolsCall(array $params): array
     {
-        // Debug: Log received params
-        error_log('[McpServer] tools/call params: ' . json_encode($params));
-        
         $toolName = $params['name'] ?? throw new \InvalidArgumentException('Tool name required');
         
         // Handle different parameter formats from various MCP clients
@@ -1007,7 +1004,7 @@ final class McpServer
             }
 
             $text = $vectorStore->getText($id);
-            $smartMetadata = SmartMetadata::fromArray($metadata);
+            $smartMetadata = new SmartMetadata($metadata);
             $memory = new SimpleDecayableMemory(
                 id: $id,
                 tier: $smartMetadata->tier,
@@ -1039,7 +1036,7 @@ final class McpServer
 
         foreach ($rows as $row) {
             $metadata = json_decode($row['metadata'] ?? '{}', true);
-            $smartMetadata = SmartMetadata::fromArray($metadata);
+            $smartMetadata = new SmartMetadata($metadata);
             $memories[] = new SimpleDecayableMemory(
                 id: $row['id'],
                 tier: $smartMetadata->tier,
@@ -1063,7 +1060,7 @@ final class McpServer
 
             foreach ($rows as $row) {
                 $metadata = json_decode($row['metadata'] ?? '{}', true);
-                $smartMetadata = SmartMetadata::fromArray($metadata);
+                $smartMetadata = new SmartMetadata($metadata);
 
                 // Filter by tier if specified
                 if ($tier !== null && $smartMetadata->tier !== $tier) {

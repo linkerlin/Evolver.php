@@ -73,7 +73,11 @@ final class MemoryGraphAdapter
             }
         }
 
-        return $this->localGraph->getMemoryAdvice($opts);
+        return $this->localGraph->getMemoryAdvice(
+            $opts['signals'] ?? [],
+            $opts['genes'] ?? [],
+            $opts['driftEnabled'] ?? false
+        );
     }
 
     /**
@@ -137,7 +141,17 @@ final class MemoryGraphAdapter
      */
     public function recordExternalCandidate(array $opts): ?array
     {
-        $ev = $this->localGraph->recordExternalCandidate($opts);
+        // Build asset array from opts
+        $asset = [
+            'id' => $opts['assetId'] ?? null,
+            'type' => $opts['assetType'] ?? 'capsule',
+        ];
+        if (isset($opts['capsule'])) {
+            $asset = array_merge($asset, $opts['capsule']);
+        }
+        $source = $opts['sourceNodeId'] ?? 'unknown';
+        $signals = $opts['signals'] ?? [];
+        $ev = $this->localGraph->recordExternalCandidate($asset, $source, $signals);
 
         if ($ev !== null && $this->name === 'remote' && $this->remoteUrl) {
             $this->remoteIngest('external_candidate', $ev);

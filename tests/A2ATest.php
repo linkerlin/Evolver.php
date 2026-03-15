@@ -141,7 +141,7 @@ final class A2ATest extends TestCase
 
     public function testParseA2AInputWithNdjson(): void
     {
-        $input = '{"type":"Gene","id":"g1"}\n{"type":"Capsule","id":"c1"}';
+        $input = "{\"type\":\"Gene\",\"id\":\"g1\"}\n{\"type\":\"Capsule\",\"id\":\"c1\"}";
         $result = A2A::parseA2AInput($input);
 
         $this->assertGreaterThanOrEqual(1, count($result));

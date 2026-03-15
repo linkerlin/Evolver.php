@@ -17,7 +17,7 @@ final class Sanitize
     /** @var string[] Patterns to redact (replaced with placeholder) */
     private const REDACT_PATTERNS = [
         // API keys & tokens (generic)
-        '/Bearer\s+[A-Za-z0-9\-._~+\/]+=*/',
+        '/Bearer\s+[A-Za-z0-9\-._~+\/]+/',
         '/sk-[A-Za-z0-9]{20,}/',
         '/token[=:]\s*["\']?[A-Za-z0-9\-._~+\/]{16,}["\']?/i',
         '/api[_-]?key[=:]\s*["\']?[A-Za-z0-9\-._~+\/]{16,}["\']?/i',
@@ -32,8 +32,8 @@ final class Sanitize
         // AWS access keys
         '/AKIA[0-9A-Z]{16}/',
         // OpenAI / Anthropic tokens
-        '/sk-proj-[A-Za-z0-9\-_]{20,}/',
-        '/sk-ant-[A-Za-z0-9\-_]{20,}/',
+        '/sk-proj-[A-Za-z0-9\-_]+/',
+        '/sk-ant-[A-Za-z0-9\-_]+/',
         // npm tokens
         '/npm_[A-Za-z0-9]{36,}/',
         // Private keys

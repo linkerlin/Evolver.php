@@ -733,7 +733,35 @@ class EvolverTest extends TestCase
         }
         fwrite($pipes[0], $input);
         fclose($pipes[0]);
-        $raw = stream_get_contents($pipes[1]);
+
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+
+        $raw = '';
+        $stderr = '';
+        $startAt = microtime(true);
+        $timeoutSeconds = 30.0;
+
+        while (true) {
+            $status = proc_get_status($proc);
+            $raw .= stream_get_contents($pipes[1]);
+            $stderr .= stream_get_contents($pipes[2]);
+
+            if (($status['running'] ?? false) === false) {
+                break;
+            }
+
+            if ((microtime(true) - $startAt) >= $timeoutSeconds) {
+                proc_terminate($proc);
+                break;
+            }
+
+            usleep(10_000);
+        }
+
+        $raw .= stream_get_contents($pipes[1]);
+        $stderr .= stream_get_contents($pipes[2]);
+
         fclose($pipes[1]);
         fclose($pipes[2]);
         proc_close($proc);
@@ -2335,10 +2363,9 @@ class EvolverTest extends TestCase
 
     public function testContentHashVerifyAssetIdMismatch(): void
     {
-        $data = ['test' => 'data'];
-        $assetId = \Evolver\ContentHash::computeAssetId($data);
-        
-        $result = \Evolver\ContentHash::verifyAssetId($data, 'different_id');
+        $data = ['test' => 'data', 'asset_id' => 'different_id'];
+
+        $result = \Evolver\ContentHash::verifyAssetId($data);
         
         $this->assertFalse($result);
     }

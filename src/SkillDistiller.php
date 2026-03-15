@@ -150,10 +150,12 @@ final class SkillDistiller
                 }
                 arsort($freq);
                 $top = array_slice(array_keys($freq), 0, 5);
+                // Calculate avg_score if not provided directly
+                $avgScore = $g['avg_score'] ?? ($g['total_count'] > 0 ? ($g['total_score'] ?? 0) / $g['total_count'] : 0);
                 $report['high_frequency'][] = [
                     'gene_id' => $geneId,
                     'count' => $g['total_count'],
-                    'avg_score' => round($g['avg_score'], 2),
+                    'avg_score' => round($avgScore, 2),
                     'top_triggers' => $top,
                 ];
             }

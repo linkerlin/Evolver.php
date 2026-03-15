@@ -107,11 +107,14 @@ final class SanitizeTest extends TestCase
 
     public function testSanitizePayloadReturnsCopyNotReference(): void
     {
-        $input = ['data' => 'test'];
+        $input = ['data' => 'test', 'token' => 'Bearer secret123456'];
+        $original = $input;
         $result = Sanitize::sanitizePayload($input);
 
-        $this->assertNotSame($input, $result);
-        $this->assertSame($input, ['data' => 'test']); // Original unchanged
+        // Result should have redacted values
+        $this->assertStringContainsString('[REDACTED]', $result['token']);
+        // Original should be unchanged
+        $this->assertSame($input, $original);
     }
 
     public function testSanitizePayloadCleansNestedStrings(): void

@@ -67,18 +67,21 @@ final class InputValidator
         // signals: optional string array
         $validated['signals'] = self::validateStringArray($args['signals'] ?? [], 'signals', 0, 100);
         
-        // blastRadius: optional array with files and lines
+        // blastRadius: optional object with files and lines
         $validated['blastRadius'] = self::validateBlastRadius($args['blastRadius'] ?? ['files' => 0, 'lines' => 0]);
         
         // modifiedFiles: optional string array
         $validated['modifiedFiles'] = self::validateStringArray($args['modifiedFiles'] ?? [], 'modifiedFiles', 0, 100);
         
-        // gene: optional array
+        // gene: optional object
         $validated['gene'] = isset($args['gene']) 
             ? self::validateGene($args['gene'])
             : null;
         
-        // capsule: optional array
+        // capsule: optional object
+        if (isset($args['capsule']) && !is_array($args['capsule'])) {
+            throw new \InvalidArgumentException('capsule must be an object');
+        }
         $validated['capsule'] = isset($args['capsule'])
             ? self::validateArray($args['capsule'], 'capsule', 0, self::MAX_ARRAY_SIZE)
             : null;
@@ -175,7 +178,7 @@ final class InputValidator
         
         // gene: required array with id
         if (!isset($args['gene']) || !is_array($args['gene'])) {
-            throw new \InvalidArgumentException('gene is required and must be an array');
+            throw new \InvalidArgumentException('gene is required and must be an object');
         }
         
         $validated['gene'] = self::validateGene($args['gene'], true);
@@ -458,7 +461,7 @@ final class InputValidator
     private static function validateGene(mixed $value, bool $requireId = false): ?array
     {
         if (!is_array($value)) {
-            throw new \InvalidArgumentException('gene must be an array');
+            throw new \InvalidArgumentException('gene must be an object');
         }
         
         if ($requireId && (!isset($value['id']) || !is_string($value['id']) || $value['id'] === '')) {
